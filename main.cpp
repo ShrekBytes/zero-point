@@ -53,16 +53,6 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
     glEnd();
 }
 
-
-// ============================================================================
-// ALGORITHM: Bresenham's Line Drawing
-// ============================================================================
-
-
-
-// ============================================================================
-// Filled circle using triangle fan
-// ============================================================================
 // ============================================================================
 // ALGORITHM: Bresenham's Line Drawing
 // ============================================================================
@@ -85,13 +75,46 @@ void drawLineBresenham(int x1, int y1, int x2, int y2) {
     glEnd();
 }
 
-
+// ============================================================================
+// Filled circle using triangle fan
+// ============================================================================
+void fillCircle(float xc, float yc, float radius) {
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2f(xc, yc);
+    int segments = 60;
+    for (int i = 0; i <= segments; i++) {
+        float angle = 2.0f * M_PI * (float)i / (float)segments;
+        float x = xc + radius * cos(angle);
+        float y = yc + radius * sin(angle);
+        glVertex2f(x, y);
+    }
+    glEnd();
+}
 
 // ============================================================================
 // Environment Drawing
 // ============================================================================
 
+void drawSky() {
+    if (timeState == DAY) {
+        glClearColor(0.53f, 0.81f, 0.92f, 1.0f);   // light blue
+    } else {
+        glClearColor(0.04f, 0.10f, 0.16f, 1.0f);   // dark blue
+    }
+    glClear(GL_COLOR_BUFFER_BIT);
+}
 
+void drawSun() {
+    if (timeState != DAY) return;
+    glColor3f(1.0f, 1.0f, 0.0f);
+    fillCircle(25.0f, 20.0f, 3.5f);
+}
+
+void drawMoon() {
+    if (timeState != NIGHT) return;
+    glColor3f(0.94f, 0.94f, 0.82f);
+    fillCircle(-25.0f, 20.0f, 3.5f);
+}
 
 // ============================================================================
 // Stage 3B: River
@@ -170,4 +193,3 @@ int main(int argc, char** argv) {
     glutMainLoop();
     return 0;
 }
-

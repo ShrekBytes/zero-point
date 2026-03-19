@@ -1,0 +1,16 @@
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Environment files
+.env
+
+# Dependencies / builds
+dist/
+build/
+
+# Editor/IDE
+.vscode/
+.idea/
