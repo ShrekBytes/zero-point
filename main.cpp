@@ -26,7 +26,32 @@ const float WORLD_TOP    =  30.0f;
 // ============================================================================
 // ALGORITHM: DDA Line Drawing
 // ============================================================================
+void drawLineDDA(float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
 
+    int steps = (int)(fabs(dx) > fabs(dy) ? fabs(dx) : fabs(dy));
+    if (steps == 0) {
+        glBegin(GL_POINTS);
+        glVertex2f(x1, y1);
+        glEnd();
+        return;
+    }
+
+    float xInc = dx / (float)steps;
+    float yInc = dy / (float)steps;
+
+    float x = x1;
+    float y = y1;
+
+    glBegin(GL_POINTS);
+    for (int i = 0; i <= steps; i++) {
+        glVertex2f(round(x), round(y));
+        x += xInc;
+        y += yInc;
+    }
+    glEnd();
+}
 
 
 // ============================================================================
