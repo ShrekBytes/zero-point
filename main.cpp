@@ -26,7 +26,32 @@ const float WORLD_TOP    =  30.0f;
 // ============================================================================
 // ALGORITHM: DDA Line Drawing
 // ============================================================================
+void drawLineDDA(float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
 
+    int steps = (int)(fabs(dx) > fabs(dy) ? fabs(dx) : fabs(dy));
+    if (steps == 0) {
+        glBegin(GL_POINTS);
+        glVertex2f(x1, y1);
+        glEnd();
+        return;
+    }
+
+    float xInc = dx / (float)steps;
+    float yInc = dy / (float)steps;
+
+    float x = x1;
+    float y = y1;
+
+    glBegin(GL_POINTS);
+    for (int i = 0; i <= steps; i++) {
+        glVertex2f(round(x), round(y));
+        x += xInc;
+        y += yInc;
+    }
+    glEnd();
+}
 
 
 // ============================================================================
@@ -38,6 +63,27 @@ const float WORLD_TOP    =  30.0f;
 // ============================================================================
 // Filled circle using triangle fan
 // ============================================================================
+// ============================================================================
+// ALGORITHM: Bresenham's Line Drawing
+// ============================================================================
+void drawLineBresenham(int x1, int y1, int x2, int y2) {
+    int dx = abs(x2 - x1);
+    int dy = abs(y2 - y1);
+    int sx = (x1 < x2) ? 1 : -1;
+    int sy = (y1 < y2) ? 1 : -1;
+    int err = dx - dy;
+
+    glBegin(GL_POINTS);
+    while (true) {
+        glVertex2i(x1, y1);
+        if (x1 == x2 && y1 == y2) break;
+
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; x1 += sx; }
+        if (e2 < dx)  { err += dx; y1 += sy; }
+    }
+    glEnd();
+}
 
 
 
