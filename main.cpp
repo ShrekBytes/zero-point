@@ -41,6 +41,37 @@ const float DEER_X_MAX =  8.0f;
 float windmillAngle = 0.0f;
 
 // ============================================================================
+// Forest + fireflies (night only)
+// ============================================================================
+static constexpr int FIREFLY_COUNT = 15;
+static float fireflyX[FIREFLY_COUNT];
+static float fireflyY[FIREFLY_COUNT];
+
+// Forest bounding box (upper-left triangle area, tuned to match sketch)
+static constexpr float FOREST_X_MIN = -38.0f;
+static constexpr float FOREST_X_MAX =  8.0f;
+static constexpr float FOREST_Y_MIN = -16.0f;
+static constexpr float FOREST_Y_MAX =  9.0f;
+
+static float frand01() {
+    return (float)rand() / (float)RAND_MAX;
+}
+
+static float clampf(float v, float lo, float hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static void initFireflies() {
+    // Scatter uniformly in a bounding box; drift logic keeps them inside.
+    for (int i = 0; i < FIREFLY_COUNT; i++) {
+        fireflyX[i] = FOREST_X_MIN + frand01() * (FOREST_X_MAX - FOREST_X_MIN);
+        fireflyY[i] = FOREST_Y_MIN + frand01() * (FOREST_Y_MAX - FOREST_Y_MIN);
+    }
+}
+
+// ============================================================================
 // ALGORITHM: DDA Line Drawing
 // ============================================================================
 void drawLineDDA(float x1, float y1, float x2, float y2) {
@@ -174,6 +205,95 @@ float fenceBase(float x) {
 // ============================================================================
 float forestBase(float x) {
     return 10.0f + (x - 40.0f) * 0.375f + 4.5f;
+}
+
+// ============================================================================
+// FOREST ZONE – upper-left side of the river
+// Includes: ground wedge, 3–4 scaled trees, and tall dense grass
+// ============================================================================
+static float riverUpperBankY(float x) {
+    // Upper river edge passes through (40,10) and (-40,-20), slope = 0.375
+    return 10.0f + (x - 40.0f) * 0.375f;
+}
+
+static void drawTree(float x, float y, float s) {
+    glPushMatrix();
+    glTranslatef(x, y, 0.0f);
+    glScalef(s, s, 1.0f); // TRANSFORM: Scaling (depth)
+
+    // trunk
+    glColor3f(0.42f, 0.24f, 0.07f);
+    fillRect(-0.7f, -4.5f, 1.4f, 4.8f);
+    glColor3f(0.28f, 0.14f, 0.03f);
+    fillRect(0.10f, -4.5f, 0.60f, 4.8f);
+
+    // canopy (rounded clusters)
+    if (timeState == DAY) glColor3f(0.12f, 0.48f, 0.10f);
+    else                 glColor3f(0.06f, 0.26f, 0.07f);
+    fillCircle(0.0f, 0.2f, 2.4f);
+    fillCircle(-1.7f, -0.3f, 1.9f);
+    fillCircle( 1.6f, -0.3f, 1.9f);
+    fillCircle(0.0f, 1.7f, 1.9f);
+
+    glPopMatrix();
+}
+
+void drawForest() {
+    // Ground wedge (forest side) — draw before the river so the river sits on top
+    if (timeState == DAY) glColor3f(0.16f, 0.52f, 0.14f);
+    else                 glColor3f(0.06f, 0.22f, 0.08f);
+
+    glBegin(GL_POLYGON);
+        glVertex2f(-40.0f, 10.0f);
+        glVertex2f( 40.0f, 10.0f);
+        glVertex2f(-40.0f,-20.0f);
+    glEnd();
+
+    // Trees (different sizes for depth)
+    drawTree(-33.0f,  6.0f, 1.25f);  // near/big
+    drawTree(-23.0f,  6.5f, 0.95f);  // mid
+    drawTree(-15.0f,  5.5f, 0.70f);  // far/small
+    drawTree(-30.0f, -1.0f, 0.90f);  // mid
+
+    // Tall, dense grass (darker than village grass)
+    if (timeState == DAY) glColor3f(0.05f, 0.28f, 0.05f);
+    else                 glColor3f(0.02f, 0.14f, 0.03f);
+
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    // Along river edge (forest side)
+    for (float x = FOREST_X_MIN; x <= FOREST_X_MAX; x += 0.55f) {
+        float baseY = riverUpperBankY(x) + 0.45f;
+        float h = 2.8f + frand01() * 3.8f;
+        glVertex2f(x, baseY);
+        glVertex2f(x - 0.15f, baseY + h);
+    }
+    // Between trees (thicker patches)
+    for (int p = 0; p < 140; p++) {
+        float x = -37.0f + frand01() * 36.0f;
+        float y = -15.0f + frand01() * 22.0f;
+        float h = 2.4f + frand01() * 4.4f;
+        glVertex2f(x, y);
+        glVertex2f(x + (frand01() - 0.5f) * 0.6f, y + h);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+// ============================================================================
+// FIREFLIES – night only particle points drifting in forest bounding box
+// ============================================================================
+void drawFireflies() {
+    if (timeState != NIGHT) return;
+
+    glColor3f(0.75f, 0.95f, 0.25f);
+    glPointSize(4.0f);
+    glBegin(GL_POINTS);
+    for (int i = 0; i < FIREFLY_COUNT; i++) {
+        glVertex2f(fireflyX[i], fireflyY[i]);
+    }
+    glEnd();
+    glPointSize(1.0f);
 }
 
 // ============================================================================
@@ -667,6 +787,15 @@ void timer(int /*value*/) {
     windmillAngle += 1.2f;
     if (windmillAngle >= 360.0f) windmillAngle -= 360.0f;
 
+    // Fireflies drift (night only) — tiny random offsets, constrained to forest box
+    if (timeState == NIGHT) {
+        for (int i = 0; i < FIREFLY_COUNT; i++) {
+            float dx = (frand01() * 2.0f - 1.0f) * 0.10f; // ~1–2 pixels in this world scale
+            float dy = (frand01() * 2.0f - 1.0f) * 0.10f;
+            fireflyX[i] = clampf(fireflyX[i] + dx, FOREST_X_MIN, FOREST_X_MAX);
+            fireflyY[i] = clampf(fireflyY[i] + dy, FOREST_Y_MIN, FOREST_Y_MAX);
+        }
+    }
 
     if (timeState == DAY) {
         catX += catDir * CAT_SPEED;
@@ -686,11 +815,13 @@ void timer(int /*value*/) {
 // ============================================================================
 void display() {
     drawSky();
+    drawForest();
     drawRiver();
     drawVillage();
     drawFence();
     drawCat();
     drawDeer();
+    drawFireflies();
     drawSun();
     drawMoon();
     glutSwapBuffers();
@@ -722,6 +853,9 @@ void init() {
     gluOrtho2D(WORLD_LEFT, WORLD_RIGHT, WORLD_BOTTOM, WORLD_TOP);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
+
+    srand(1337);
+    initFireflies();
 }
 
 int main(int argc, char** argv) {
