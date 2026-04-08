@@ -8,7 +8,7 @@
 ## Part 1 — Quick Overview
 
 | Person | Zone / Focus | Core Deliverables |
-|---|---|---|---|
+|---|---|---|
 | **Person 1** | River + Birds | Bresenham Line algorithm, `drawRiver()`, `drawBirds()`, birds animation |
 | **Person 2** | Forest Zone | `drawForest()` (trees + grass), `drawFireflies()`, fireflies animation |
 | **Person 3** | Village | `drawVillage()` (house + windmill + grass), windmill rotation |
