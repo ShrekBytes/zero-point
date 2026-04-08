@@ -37,6 +37,9 @@ const float DEER_SPEED = 0.03f;
 const float DEER_X_MIN = -18.0f;
 const float DEER_X_MAX =  8.0f;
 
+
+float windmillAngle = 0.0f;
+
 // ============================================================================
 // ALGORITHM: DDA Line Drawing
 // ============================================================================
@@ -534,10 +537,127 @@ void drawDeer() {
 }
 
 // ============================================================================
+// VILLAGE – Person 3
+//   House      : walls (GL_QUADS), roof (GL_TRIANGLES), door (GL_QUADS)
+//   Windmill   : trapezoid body + rotating blades (glRotatef)
+//   Short grass: GL_LINES, lighter and shorter than forest grass
+//   TRANSFORM  : Rotation – windmill blades spin via glPushMatrix/glRotatef/glPopMatrix
+// ============================================================================
+void drawVillage() {
+
+    // ── Short grass ─────────────────────────────────────────────────────────
+    // Lighter green, shorter blades scattered across the village zone
+    glColor3f(0.28f, 0.62f, 0.15f);
+    glLineWidth(1.5f);
+    float grass[][2] = {
+        {5,-22}, {8,-26}, {12,-20}, {16,-25}, {20,-22},
+        {24,-24}, {28,-21}, {33,-24}, {37,-20}, {22,-28},
+        {10,-28}, {30,-27}, {38,-25}, {6,-18}, {18,-27},
+        // extra grass near windmill sides and house 2 area
+        {23,-20}, {26,-18}, {35,-18}, {38,-16}, {36,-22},
+        {32,-20}, {25,-26}, {29,-24}, {34,-25}, {39,-23},
+        {7,-24},  {14,-23}, {19,-20}, {27,-28}, {31,-22}
+    };
+    for (auto& g : grass) {
+        // each blade: two lines fanning from base
+        glBegin(GL_LINES);
+            glVertex2f(g[0],        g[1]);
+            glVertex2f(g[0]-0.4f,   g[1]+1.8f);
+        glEnd();
+        glBegin(GL_LINES);
+            glVertex2f(g[0],        g[1]);
+            glVertex2f(g[0]+0.4f,   g[1]+1.8f);
+        glEnd();
+    }
+    glLineWidth(1.0f);
+
+    // ── House 1 ──────────────────────────────────────────────────────────────
+    // Walls
+    glColor3f(0.42f, 0.23f, 0.09f);
+    fillRect(8.0f, -28.0f, 13.0f, 11.0f);   // x:8–21, y:-28–-17
+
+    // Roof (triangle)
+    glColor3f(0.28f, 0.13f, 0.04f);
+    glBegin(GL_TRIANGLES);
+        glVertex2f( 7.0f, -17.0f);   // bottom-left overhang
+        glVertex2f(14.5f, -12.0f);   // peak
+        glVertex2f(22.0f, -17.0f);   // bottom-right overhang
+    glEnd();
+
+    // Door
+    glColor3f(0.18f, 0.09f, 0.03f);
+    fillRect(12.5f, -28.0f, 3.5f, 5.0f);
+
+    // ── House 2 (right of windmill, slightly above windmill top) ─────────────
+    glColor3f(0.55f, 0.28f, 0.10f);
+    fillRect(34.0f, -12.0f, 5.0f, 6.0f);    // x:34–39, y:-12–-6
+
+    // Roof
+    glColor3f(0.32f, 0.15f, 0.04f);
+    glBegin(GL_TRIANGLES);
+        glVertex2f(33.0f, -6.0f);    // bottom-left overhang
+        glVertex2f(36.5f, -2.5f);    // peak
+        glVertex2f(40.0f, -6.0f);    // bottom-right overhang
+    glEnd();
+
+    // Window
+    glColor3f(0.82f, 0.76f, 0.58f);
+    fillRect(34.5f, -10.0f, 1.8f, 1.8f);
+
+    // Door
+    glColor3f(0.18f, 0.09f, 0.03f);
+    fillRect(37.0f, -12.0f, 1.6f, 3.2f);
+
+    // ── Windmill body ────────────────────────────────────────────────────────
+    // Trapezoid: wider at bottom, narrower at top
+    glColor3f(0.52f, 0.38f, 0.22f);
+    glBegin(GL_QUADS);
+        glVertex2f(25.5f, -27.0f);   // bottom-left
+        glVertex2f(34.5f, -27.0f);   // bottom-right
+        glVertex2f(32.5f,  -8.0f);   // top-right
+        glVertex2f(27.5f,  -8.0f);   // top-left
+    glEnd();
+
+    // Windmill door
+    glColor3f(0.25f, 0.14f, 0.05f);
+    fillRect(28.5f, -27.0f, 3.0f, 5.0f);
+
+    // Windmill window
+    glColor3f(0.78f, 0.72f, 0.55f);
+    fillRect(28.8f, -16.0f, 2.4f, 2.4f);
+
+    // ── Windmill blades (rotating) ───────────────────────────────────────────
+    // Pivot = top-centre of windmill body
+    float pivotX = 30.0f;
+    float pivotY = -8.0f;
+
+    glPushMatrix();
+        glTranslatef(pivotX, pivotY, 0.0f);      // move origin to pivot
+        glRotatef(windmillAngle, 0.0f, 0.0f, 1.0f);  // TRANSFORM: Rotation
+
+        glColor3f(0.82f, 0.79f, 0.68f);
+        float bw = 0.55f;   // blade half-width
+        float bl = 4.5f;    // blade half-length
+
+        // Two rectangles crossing at centre form 4 blades
+        fillRect(-bl, -bw, bl * 2.0f, bw * 2.0f);  // horizontal blade pair
+        fillRect(-bw, -bl, bw * 2.0f, bl * 2.0f);  // vertical blade pair
+    glPopMatrix();
+
+    // Hub (drawn after so it sits on top of blades)
+    glColor3f(0.38f, 0.22f, 0.08f);
+    fillCircle(pivotX, pivotY, 0.7f);
+}
+
+// ============================================================================
 // Timer – animates cat back and forth (day only)
 //        animates deer back and forth (night only)
 // ============================================================================
 void timer(int /*value*/) {
+    // Windmill rotates always (day and night) – Person 3's Rotation transform
+    windmillAngle += 1.2f;
+    if (windmillAngle >= 360.0f) windmillAngle -= 360.0f;
+
     if (timeState == DAY) {
         catX += catDir * CAT_SPEED;
         if (catX > CAT_X_MAX) { catX = CAT_X_MAX; catDir = -1.0f; }
@@ -557,6 +677,7 @@ void timer(int /*value*/) {
 void display() {
     drawSky();
     drawRiver();
+    drawVillage();   // Person 3: house + windmill + grass
     drawFence();
     drawCat();
     drawDeer();
@@ -596,7 +717,7 @@ void init() {
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(800, 600);
+    glutInitWindowSize(1200, 900);
     glutInitWindowPosition(100, 100);
     glutCreateWindow("Zero Point - Forest Meets Village");
 
