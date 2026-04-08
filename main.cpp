@@ -40,6 +40,11 @@ const float DEER_X_MAX =  8.0f;
 
 float windmillAngle = 0.0f;
 
+// Bird animation globals (Person 1)
+float birdX[3]        = { -45.0f, -55.0f, -62.0f };  // start off-screen left
+float birdY[3]        = {  22.0f,  18.5f,  25.0f };  // different sky heights
+const float BIRD_SPEED = 0.035f;
+
 // ============================================================================
 // ALGORITHM: DDA Line Drawing
 // ============================================================================
@@ -71,23 +76,34 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
 }
 
 // ============================================================================
-// ALGORITHM: Bresenham's Line Drawing
+// ALGORITHM: Bresenham's Line Drawing  [Person 1 — owns this]
+//
+// Works by tracking a cumulative error term (err) that decides whether
+// to step in the minor axis each iteration — integer-only arithmetic,
+// no floating-point needed.
+//
+//   dx, dy  = absolute delta in each axis
+//   sx, sy  = step direction (+1 or -1) for each axis
+//   err     = current accumulated error
+//   e2      = doubled error used for the two threshold comparisons
+//
+// Used for: both edges of the diagonal river
 // ============================================================================
 void drawLineBresenham(int x1, int y1, int x2, int y2) {
-    int dx = abs(x2 - x1);
-    int dy = abs(y2 - y1);
-    int sx = (x1 < x2) ? 1 : -1;
-    int sy = (y1 < y2) ? 1 : -1;
-    int err = dx - dy;
+    int dx  =  abs(x2 - x1);
+    int dy  =  abs(y2 - y1);
+    int sx  = (x1 < x2) ? 1 : -1;   // horizontal step direction
+    int sy  = (y1 < y2) ? 1 : -1;   // vertical step direction
+    int err =  dx - dy;              // initial error
 
     glBegin(GL_POINTS);
     while (true) {
         glVertex2i(x1, y1);
-        if (x1 == x2 && y1 == y2) break;
+        if (x1 == x2 && y1 == y2) break;   // reached destination
 
         int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; x1 += sx; }
-        if (e2 < dx)  { err += dx; y1 += sy; }
+        if (e2 > -dy) { err -= dy; x1 += sx; }   // step horizontally
+        if (e2 <  dx) { err += dx; y1 += sy; }   // step vertically
     }
     glEnd();
 }
@@ -134,28 +150,40 @@ void drawMoon() {
 }
 
 // ============================================================================
-// Stage 3B: River
+// RIVER  [Person 1 — owns this]
+//
+// The diagonal river runs from top-right to bottom-left across the scene.
+// Two parallel Bresenham edges define the river boundaries; the body is
+// a filled GL_POLYGON between them, with a shimmer strip in the centre.
+//
+// Upper edge: (40, 10) -> (-40, -20)   ALGORITHM: Bresenham
+// Lower edge: (40,  5) -> (-40, -25)   ALGORITHM: Bresenham
 // ============================================================================
 void drawRiver() {
-    // River body – diagonal from top-right to bottom-left
-    // Starts below sun/moon (y=15), touches left/right/bottom edges
-    glColor3f(0.0f, 0.5f, 0.8f);
+    // --- Main river body: filled polygon between the two Bresenham edges ---
+    glColor3f(0.20f, 0.52f, 0.80f);
     glBegin(GL_POLYGON);
-        glVertex2f( 40.0f,  10.0f);   // top-right corner (right edge)
-        glVertex2f( 40.0f,   5.0f);   // lower right of river band
-        glVertex2f(-40.0f, -30.0f);   // bottom-left corner (left + bottom edge)
-        glVertex2f(-40.0f, -20.0f);   // upper left of river band
+        glVertex2f( 40.0f,  10.0f);   // upper-right
+        glVertex2f( 40.0f,   5.0f);   // lower-right
+        glVertex2f(-40.0f, -25.0f);   // lower-left
+        glVertex2f(-40.0f, -20.0f);   // upper-left
     glEnd();
 
-    // Sandy banks (outer edge) using DDA lines – offset outward from river
-    glColor3f(0.76f, 0.70f, 0.50f);
-    drawLineDDA( 40.0f, 10.5f, -40.0f, -20.5f);   // ALGORITHM: DDA – sandy upper bank
-    drawLineDDA( 40.0f,  4.5f, -40.0f, -29.5f);   // ALGORITHM: DDA – sandy lower bank
+    // --- Centre shimmer strip: lighter blue highlight ---
+    glColor3f(0.38f, 0.68f, 0.92f);
+    glBegin(GL_POLYGON);
+        glVertex2f( 40.0f,  8.5f);
+        glVertex2f( 40.0f,  6.5f);
+        glVertex2f(-40.0f, -21.5f);
+        glVertex2f(-40.0f, -23.5f);
+    glEnd();
 
-    // River banks (inner edge) using DDA lines – right at the water's edge
-    glColor3f(0.0f, 0.3f, 0.5f);
-    drawLineDDA( 40.0f, 11.0f, -40.0f, -21.0f);   // ALGORITHM: DDA – upper bank
-    drawLineDDA( 40.0f,  4.0f, -40.0f, -29.0f);   // ALGORITHM: DDA – lower bank
+    // --- Dark earthy bank lines drawn with Bresenham algorithm ---
+    glColor3f(0.30f, 0.18f, 0.06f);
+    glPointSize(2.5f);
+    drawLineBresenham( 40, 10, -40, -20);   // ALGORITHM: Bresenham -- upper bank edge
+    drawLineBresenham( 40,  5, -40, -25);   // ALGORITHM: Bresenham -- lower bank edge
+    glPointSize(1.0f);
 }
 
 // ============================================================================
@@ -660,6 +688,42 @@ void drawVillage() {
 }
 
 // ============================================================================
+// BIRDS  [Person 1 -- owns this]
+//
+// Three birds drawn as V-shapes using GL_LINE_STRIP, visible day only.
+// Each bird is a left-wing tip -> centre -> right-wing tip polyline.
+//
+// TRANSFORM: Translation -- birdX[] increments every frame in timer().
+//            When a bird drifts past the right edge it resets off the
+//            left edge so it loops continuously across the sky.
+// ============================================================================
+void drawBirds() {
+    if (timeState != DAY) return;
+
+    glColor3f(0.08f, 0.08f, 0.08f);
+    glLineWidth(1.8f);
+    glEnable(GL_LINE_SMOOTH);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+
+    for (int i = 0; i < 3; i++) {
+        float bx = birdX[i];
+        float by = birdY[i];
+        float ws = 1.3f;   // half wing-span
+        float wh = 0.5f;   // wing dip height
+
+        // V-shape: left tip -> body centre -> right tip
+        glBegin(GL_LINE_STRIP);
+            glVertex2f(bx - ws, by + wh);   // left wing tip
+            glVertex2f(bx,      by);         // centre (body)
+            glVertex2f(bx + ws, by + wh);   // right wing tip
+        glEnd();
+    }
+
+    glDisable(GL_LINE_SMOOTH);
+    glLineWidth(1.0f);
+}
+
+// ============================================================================
 // Timer – animates cat back and forth (day only)
 //        animates deer back and forth (night only)
 // ============================================================================
@@ -677,6 +741,15 @@ void timer(int /*value*/) {
         if (deerX > DEER_X_MAX) { deerX = DEER_X_MAX; deerDir = -1.0f; }
         if (deerX < DEER_X_MIN) { deerX = DEER_X_MIN; deerDir =  1.0f; }
     }
+    // TRANSFORM: Translation -- move birds left to right (Person 1)
+    if (timeState == DAY) {
+        for (int i = 0; i < 3; i++) {
+            birdX[i] += BIRD_SPEED;
+            if (birdX[i] > 45.0f)    // flew off right edge
+                birdX[i] = -50.0f;   // reset off-screen to the left
+        }
+    }
+
     glutPostRedisplay();
     glutTimerFunc(16, timer, 0);
 }
@@ -687,6 +760,7 @@ void timer(int /*value*/) {
 void display() {
     drawSky();
     drawRiver();
+    drawBirds();       // Person 1 -- day only, translating V-shapes
     drawVillage();
     drawFence();
     drawCat();
