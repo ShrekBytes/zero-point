@@ -1,3 +1,12 @@
+// ============================================================================
+// main.cpp – Zero Point
+// ============================================================================
+// "Where Forest Meets Village: Time-Driven Environmental Simulation"
+//
+// Controls:
+//   Spacebar  – Toggle day/night
+//   ESC / q   – Quit
+// ============================================================================
 
 #include <GL/glut.h>
 #include <cmath>
@@ -66,6 +75,20 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
     glEnd();
 }
 
+// ============================================================================
+// ALGORITHM: Bresenham's Line Drawing  [Person 1 — owns this]
+//
+// Works by tracking a cumulative error term (err) that decides whether
+// to step in the minor axis each iteration — integer-only arithmetic,
+// no floating-point needed.
+//
+//   dx, dy  = absolute delta in each axis
+//   sx, sy  = step direction (+1 or -1) for each axis
+//   err     = current accumulated error
+//   e2      = doubled error used for the two threshold comparisons
+//
+// Used for: both edges of the diagonal river
+// ============================================================================
 void drawLineBresenham(int x1, int y1, int x2, int y2) {
     int dx  =  abs(x2 - x1);
     int dy  =  abs(y2 - y1);
@@ -126,6 +149,16 @@ void drawMoon() {
     fillCircle(-25.0f, 20.0f, 3.5f);
 }
 
+// ============================================================================
+// RIVER  [Person 1 — owns this]
+//
+// The diagonal river runs from top-right to bottom-left across the scene.
+// Two parallel Bresenham edges define the river boundaries; the body is
+// a filled GL_POLYGON between them, with a shimmer strip in the centre.
+//
+// Upper edge: (40, 10) -> (-40, -20)   ALGORITHM: Bresenham
+// Lower edge: (40,  5) -> (-40, -25)   ALGORITHM: Bresenham
+// ============================================================================
 void drawRiver() {
     // --- Main river body: filled polygon between the two Bresenham edges ---
     glColor3f(0.20f, 0.52f, 0.80f);
@@ -196,7 +229,18 @@ void fillRect(float x, float y, float w, float h) {
     glEnd();
 }
 
-
+// ============================================================================
+// FENCE – village side of the river
+//
+//  Post bodies     → fillRect (GL_QUADS)
+//  Post shading    → fillRect (GL_QUADS, darker strip for depth)
+//  Rails           → drawLine (GL_LINES + glLineWidth) – crisp & thick
+//  Rail highlight  → drawLine (lighter, thin)
+//  Rail shadow     → drawLine (darker, thin)
+//  Post caps/edges → drawLine (GL_LINES)
+//
+//  GAP: a gap is left in the middle of the fence (around x=0)
+// ============================================================================
 void drawFence() {
     const float xStart      = -38.0f;
     const float xEnd        =  38.0f;
@@ -265,6 +309,14 @@ void drawFence() {
     }
 }
 
+// ============================================================================
+// CAT  (day only) – translated along fence baseline
+//
+//  Filled shapes   → fillCircle / GL_TRIANGLES
+//  Tail            → drawLine (GL_LINES, thick) – curves up behind body
+//  Whiskers/Mouth  → drawLine (GL_LINES, thin)
+//  TRANSFORM       → glTranslatef (translation along fence)
+// ============================================================================
 void drawCat() {
     if (timeState != DAY) return;
 
@@ -279,9 +331,11 @@ void drawCat() {
     fillCircle(0.0f, 0.75f, 1.05f);
     glPopMatrix();
 
-
+    // --- Tail: emerges from left side of body, sweeps up and curls over ---
+    // Draw as a series of thick filled circles along the arc path for a smooth, attached look
+    // Arc: base at body-left (-0.85, 0.6), sweeps left-down then up then curls right
     glColor3f(0.78f, 0.36f, 0.05f);
-    drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 5.5f);   
+    drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 5.5f);   // base – emerges left from body
     drawLine(-1.55f, 0.70f, -2.00f, 1.30f, 5.5f);   // curves upward
     drawLine(-2.00f, 1.30f, -2.05f, 2.10f, 5.0f);   // rises up
     drawLine(-2.05f, 2.10f, -1.70f, 2.70f, 4.5f);   // curls inward at top
@@ -384,6 +438,17 @@ void drawCat() {
     glPopMatrix();
 }
 
+// ============================================================================
+// DEER  (night only) – translated along forest-side bank baseline
+//
+//  Body/Head       → fillCircle (scaled ovals)
+//  Legs            → drawLine (GL_LINES, thick)
+//  Antlers         → drawLine (GL_LINES, medium)
+//  Belly patch     → fillCircle (cream/white)
+//  Tail            → fillCircle (white)
+//  Eyes/Nose       → fillCircle (small)
+//  TRANSFORM       → glTranslatef (translation along bank)
+// ============================================================================
 void drawDeer() {
     if (timeState != NIGHT) return;
 
@@ -622,6 +687,16 @@ void drawVillage() {
     fillCircle(pivotX, pivotY, 0.7f);
 }
 
+// ============================================================================
+// BIRDS  [Person 1 -- owns this]
+//
+// Three birds drawn as V-shapes using GL_LINE_STRIP, visible day only.
+// Each bird is a left-wing tip -> centre -> right-wing tip polyline.
+//
+// TRANSFORM: Translation -- birdX[] increments every frame in timer().
+//            When a bird drifts past the right edge it resets off the
+//            left edge so it loops continuously across the sky.
+// ============================================================================
 void drawBirds() {
     if (timeState != DAY) return;
 
@@ -666,12 +741,12 @@ void timer(int /*value*/) {
         if (deerX > DEER_X_MAX) { deerX = DEER_X_MAX; deerDir = -1.0f; }
         if (deerX < DEER_X_MIN) { deerX = DEER_X_MIN; deerDir =  1.0f; }
     }
-    
+    // TRANSFORM: Translation -- move birds left to right (Person 1)
     if (timeState == DAY) {
         for (int i = 0; i < 3; i++) {
             birdX[i] += BIRD_SPEED;
-            if (birdX[i] > 45.0f)    
-                birdX[i] = -50.0f;   
+            if (birdX[i] > 45.0f)    // flew off right edge
+                birdX[i] = -50.0f;   // reset off-screen to the left
         }
     }
 
@@ -685,7 +760,7 @@ void timer(int /*value*/) {
 void display() {
     drawSky();
     drawRiver();
-    drawBirds();       
+    drawBirds();       // Person 1 -- day only, translating V-shapes
     drawVillage();
     drawFence();
     drawCat();
