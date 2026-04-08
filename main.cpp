@@ -30,6 +30,13 @@ const float CAT_SPEED = 0.04f;
 const float CAT_X_MIN = -18.0f;
 const float CAT_X_MAX =  14.0f;
 
+// Deer animation globals
+float deerX   = -5.0f;
+float deerDir =  1.0f;
+const float DEER_SPEED = 0.03f;
+const float DEER_X_MIN = -18.0f;
+const float DEER_X_MAX =  8.0f;
+
 // ============================================================================
 // ALGORITHM: DDA Line Drawing
 // ============================================================================
@@ -158,6 +165,15 @@ float fenceBase(float x) {
 }
 
 // ============================================================================
+// Helper: Y position on the forest-side (upper) river bank
+// Upper river bank passes through (40,10) and (-40,-20), slope = 0.375
+// Offset +4.5 upward so deer stands on dry ground well above the bank
+// ============================================================================
+float forestBase(float x) {
+    return 10.0f + (x - 40.0f) * 0.375f + 4.5f;
+}
+
+// ============================================================================
 // Helper: GL_LINES wrapper with settable width (fence rails & cat details)
 // ============================================================================
 void drawLine(float x1, float y1, float x2, float y2, float width = 1.0f) {
@@ -191,6 +207,8 @@ void fillRect(float x, float y, float w, float h) {
 //  Rail highlight  → drawLine (lighter, thin)
 //  Rail shadow     → drawLine (darker, thin)
 //  Post caps/edges → drawLine (GL_LINES)
+//
+//  GAP: a gap is left in the middle of the fence (around x=0)
 // ============================================================================
 void drawFence() {
     const float xStart      = -38.0f;
@@ -201,8 +219,17 @@ void drawFence() {
     const float railHi      =  postHeight * 0.74f;
     const float railLo      =  postHeight * 0.40f;
 
-    // 1. Filled post bodies
+    // Gap parameters – centred around x = 0
+    const float gapCentre = 0.0f;
+    const float gapHalf   = 4.5f;   // half-width of gap (total gap ~9 units)
+    const float gapLeft   = gapCentre - gapHalf;   // -4.5
+    const float gapRight  = gapCentre + gapHalf;   //  4.5
+
+    // 1. Filled post bodies – skip posts inside the gap
     for (float px = xStart; px <= xEnd + 0.1f; px += postSpacing) {
+        // Skip posts that fall inside the gap
+        if (px > gapLeft && px < gapRight) continue;
+
         float py = fenceBase(px);
         // main body – medium dark brown
         glColor3f(0.42f, 0.24f, 0.07f);
@@ -212,22 +239,38 @@ void drawFence() {
         fillRect(px + postHW * 0.42f, py, postHW * 0.58f, postHeight);
     }
 
-    // 2. Rails – GL_LINES (thick, smooth)
+    // 2. Rails – split into left segment and right segment to create gap
+    // Left rail segment: xStart to gapLeft
     glColor3f(0.60f, 0.38f, 0.14f);
-    drawLine(xStart, fenceBase(xStart)+railHi, xEnd, fenceBase(xEnd)+railHi, 6.0f);
-    drawLine(xStart, fenceBase(xStart)+railLo, xEnd, fenceBase(xEnd)+railLo, 6.0f);
-    // rail top highlight
+    drawLine(xStart, fenceBase(xStart)+railHi, gapLeft, fenceBase(gapLeft)+railHi, 6.0f);
+    drawLine(xStart, fenceBase(xStart)+railLo, gapLeft, fenceBase(gapLeft)+railLo, 6.0f);
+    // Left rail highlight
     glColor3f(0.78f, 0.58f, 0.28f);
-    drawLine(xStart, fenceBase(xStart)+railHi+0.22f, xEnd, fenceBase(xEnd)+railHi+0.22f, 1.5f);
-    drawLine(xStart, fenceBase(xStart)+railLo+0.22f, xEnd, fenceBase(xEnd)+railLo+0.22f, 1.5f);
-    // rail bottom shadow
+    drawLine(xStart, fenceBase(xStart)+railHi+0.22f, gapLeft, fenceBase(gapLeft)+railHi+0.22f, 1.5f);
+    drawLine(xStart, fenceBase(xStart)+railLo+0.22f, gapLeft, fenceBase(gapLeft)+railLo+0.22f, 1.5f);
+    // Left rail shadow
     glColor3f(0.28f, 0.14f, 0.04f);
-    drawLine(xStart, fenceBase(xStart)+railHi-0.22f, xEnd, fenceBase(xEnd)+railHi-0.22f, 1.5f);
-    drawLine(xStart, fenceBase(xStart)+railLo-0.22f, xEnd, fenceBase(xEnd)+railLo-0.22f, 1.5f);
+    drawLine(xStart, fenceBase(xStart)+railHi-0.22f, gapLeft, fenceBase(gapLeft)+railHi-0.22f, 1.5f);
+    drawLine(xStart, fenceBase(xStart)+railLo-0.22f, gapLeft, fenceBase(gapLeft)+railLo-0.22f, 1.5f);
 
-    // 3. Post top caps and left edges – GL_LINES
+    // Right rail segment: gapRight to xEnd
+    glColor3f(0.60f, 0.38f, 0.14f);
+    drawLine(gapRight, fenceBase(gapRight)+railHi, xEnd, fenceBase(xEnd)+railHi, 6.0f);
+    drawLine(gapRight, fenceBase(gapRight)+railLo, xEnd, fenceBase(xEnd)+railLo, 6.0f);
+    // Right rail highlight
+    glColor3f(0.78f, 0.58f, 0.28f);
+    drawLine(gapRight, fenceBase(gapRight)+railHi+0.22f, xEnd, fenceBase(xEnd)+railHi+0.22f, 1.5f);
+    drawLine(gapRight, fenceBase(gapRight)+railLo+0.22f, xEnd, fenceBase(xEnd)+railLo+0.22f, 1.5f);
+    // Right rail shadow
+    glColor3f(0.28f, 0.14f, 0.04f);
+    drawLine(gapRight, fenceBase(gapRight)+railHi-0.22f, xEnd, fenceBase(xEnd)+railHi-0.22f, 1.5f);
+    drawLine(gapRight, fenceBase(gapRight)+railLo-0.22f, xEnd, fenceBase(xEnd)+railLo-0.22f, 1.5f);
+
+    // 3. Post top caps and left edges – skip posts inside the gap
     glColor3f(0.25f, 0.12f, 0.02f);
     for (float px = xStart; px <= xEnd + 0.1f; px += postSpacing) {
+        if (px > gapLeft && px < gapRight) continue;
+
         float py  = fenceBase(px);
         float top = py + postHeight;
         drawLine(px - postHW, py,  px - postHW, top,  1.2f);  // left edge
@@ -250,23 +293,29 @@ void drawCat() {
     glPushMatrix();
     glTranslatef(catX, baseY, 0.0f);  // TRANSFORM: Translation
 
-    // --- Tail: sweeps up and curves to the right ---
-    glColor3f(0.78f, 0.36f, 0.05f);
-    drawLine( 1.5f, 0.3f,  2.4f, 0.8f,  4.0f);
-    drawLine( 2.4f, 0.8f,  2.6f, 1.8f,  4.0f);
-    drawLine( 2.6f, 1.8f,  2.1f, 2.4f,  4.0f);
-    // tail tip – lighter highlight
-    glColor3f(0.97f, 0.62f, 0.18f);
-    drawLine( 1.5f, 0.3f,  2.4f, 0.8f,  1.5f);
-    drawLine( 2.4f, 0.8f,  2.6f, 1.8f,  1.5f);
-    drawLine( 2.6f, 1.8f,  2.1f, 2.4f,  1.5f);
-
-    // --- Body: tall oval for sitting posture ---
+    // --- Body: tall oval for sitting posture (drawn first so tail overlaps at base) ---
     glColor3f(0.92f, 0.50f, 0.10f);
     glPushMatrix();
     glScalef(1.0f, 1.35f, 1.0f);
     fillCircle(0.0f, 0.75f, 1.05f);
     glPopMatrix();
+
+    // --- Tail: emerges from left side of body, sweeps up and curls over ---
+    // Draw as a series of thick filled circles along the arc path for a smooth, attached look
+    // Arc: base at body-left (-0.85, 0.6), sweeps left-down then up then curls right
+    glColor3f(0.78f, 0.36f, 0.05f);
+    drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 5.5f);   // base – emerges left from body
+    drawLine(-1.55f, 0.70f, -2.00f, 1.30f, 5.5f);   // curves upward
+    drawLine(-2.00f, 1.30f, -2.05f, 2.10f, 5.0f);   // rises up
+    drawLine(-2.05f, 2.10f, -1.70f, 2.70f, 4.5f);   // curls inward at top
+    drawLine(-1.70f, 2.70f, -1.10f, 2.90f, 4.0f);   // tip hooks right over body
+    // Lighter highlight stripe along tail centre
+    glColor3f(0.97f, 0.62f, 0.18f);
+    drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 2.0f);
+    drawLine(-1.55f, 0.70f, -2.00f, 1.30f, 2.0f);
+    drawLine(-2.00f, 1.30f, -2.05f, 2.10f, 1.8f);
+    drawLine(-2.05f, 2.10f, -1.70f, 2.70f, 1.6f);
+    drawLine(-1.70f, 2.70f, -1.10f, 2.90f, 1.4f);
 
     // --- Cream belly patch ---
     glColor3f(0.97f, 0.87f, 0.68f);
@@ -359,13 +408,144 @@ void drawCat() {
 }
 
 // ============================================================================
+// DEER  (night only) – translated along forest-side bank baseline
+//
+//  Body/Head       → fillCircle (scaled ovals)
+//  Legs            → drawLine (GL_LINES, thick)
+//  Antlers         → drawLine (GL_LINES, medium)
+//  Belly patch     → fillCircle (cream/white)
+//  Tail            → fillCircle (white)
+//  Eyes/Nose       → fillCircle (small)
+//  TRANSFORM       → glTranslatef (translation along bank)
+// ============================================================================
+void drawDeer() {
+    if (timeState != NIGHT) return;
+
+    float baseY = forestBase(deerX);
+    glPushMatrix();
+    glTranslatef(deerX, baseY, 0.0f);      // TRANSFORM: Translation
+    glScalef(deerDir, 1.0f, 1.0f);         // TRANSFORM: Mirror when moving left (deerDir = -1)
+
+    // --- Legs: four legs, slightly angled ---
+    glColor3f(0.55f, 0.27f, 0.07f);
+    // back legs
+    drawLine(-0.70f, 0.0f, -0.90f, -2.2f, 2.5f);
+    drawLine(-0.30f, 0.0f, -0.40f, -2.2f, 2.5f);
+    // front legs
+    drawLine( 0.30f, 0.0f,  0.40f, -2.2f, 2.5f);
+    drawLine( 0.80f, 0.0f,  0.95f, -2.2f, 2.5f);
+    // hooves (darker tips)
+    glColor3f(0.25f, 0.12f, 0.04f);
+    drawLine(-0.90f, -2.2f, -0.90f, -2.6f, 2.5f);
+    drawLine(-0.40f, -2.2f, -0.40f, -2.6f, 2.5f);
+    drawLine( 0.40f, -2.2f,  0.40f, -2.6f, 2.5f);
+    drawLine( 0.95f, -2.2f,  0.95f, -2.6f, 2.5f);
+
+    // --- Body: wide horizontal oval ---
+    glColor3f(0.72f, 0.40f, 0.12f);
+    glPushMatrix();
+    glScalef(1.55f, 1.0f, 1.0f);
+    fillCircle(0.0f, 0.85f, 1.10f);
+    glPopMatrix();
+
+    // --- Belly/chest patch: lighter cream ---
+    glColor3f(0.88f, 0.74f, 0.52f);
+    glPushMatrix();
+    glScalef(0.70f, 0.85f, 1.0f);
+    fillCircle(0.18f, 0.90f, 0.75f);
+    glPopMatrix();
+
+    // --- Neck: thick angled oval connecting body to head ---
+    glColor3f(0.72f, 0.40f, 0.12f);
+    glPushMatrix();
+    glTranslatef(0.85f, 1.55f, 0.0f);
+    glScalef(0.55f, 1.0f, 1.0f);
+    fillCircle(0.0f, 0.0f, 0.65f);
+    glPopMatrix();
+
+    // --- Head: rounded oval, slightly tilted forward ---
+    glColor3f(0.72f, 0.40f, 0.12f);
+    glPushMatrix();
+    glTranslatef(1.30f, 2.60f, 0.0f);
+    glScalef(1.15f, 0.90f, 1.0f);
+    fillCircle(0.0f, 0.0f, 0.62f);
+    glPopMatrix();
+
+    // --- Snout: slightly lighter protruding muzzle ---
+    glColor3f(0.82f, 0.60f, 0.40f);
+    glPushMatrix();
+    glTranslatef(1.80f, 2.42f, 0.0f);
+    glScalef(1.10f, 0.65f, 1.0f);
+    fillCircle(0.0f, 0.0f, 0.38f);
+    glPopMatrix();
+
+    // --- Nose: dark oval at tip of snout ---
+    glColor3f(0.18f, 0.08f, 0.04f);
+    fillCircle(2.14f, 2.38f, 0.13f);
+
+    // --- Eye: dark with white shine ---
+    glColor3f(0.10f, 0.06f, 0.02f);
+    fillCircle(1.52f, 2.72f, 0.15f);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    fillCircle(1.58f, 2.78f, 0.05f);
+
+    // --- Ear: rounded triangle shape ---
+    glColor3f(0.72f, 0.40f, 0.12f);
+    glBegin(GL_TRIANGLES);
+        glVertex2f(0.88f, 3.05f);
+        glVertex2f(0.70f, 3.85f);
+        glVertex2f(1.32f, 3.70f);
+    glEnd();
+    // inner ear (pink)
+    glColor3f(0.88f, 0.58f, 0.58f);
+    glBegin(GL_TRIANGLES);
+        glVertex2f(0.92f, 3.12f);
+        glVertex2f(0.78f, 3.68f);
+        glVertex2f(1.22f, 3.56f);
+    glEnd();
+
+    // --- White tail ---
+    glColor3f(0.95f, 0.92f, 0.85f);
+    fillCircle(-1.60f, 1.20f, 0.32f);
+
+    // --- Antlers: branched lines from top of head ---
+    glColor3f(0.40f, 0.22f, 0.06f);
+    // left antler base
+    drawLine(0.90f, 3.18f,  0.50f, 4.30f, 2.0f);
+    // left antler branch 1
+    drawLine(0.50f, 4.30f,  0.10f, 5.10f, 2.0f);
+    // left antler branch 2
+    drawLine(0.50f, 4.30f,  0.70f, 5.00f, 2.0f);
+    // left antler branch 3 (top tine)
+    drawLine(0.10f, 5.10f, -0.20f, 5.60f, 1.8f);
+    drawLine(0.10f, 5.10f,  0.30f, 5.55f, 1.8f);
+
+    // right antler base
+    drawLine(1.40f, 3.22f,  1.70f, 4.30f, 2.0f);
+    // right antler branch 1
+    drawLine(1.70f, 4.30f,  1.40f, 5.10f, 2.0f);
+    // right antler branch 2
+    drawLine(1.70f, 4.30f,  2.10f, 5.00f, 2.0f);
+    // right antler branch 3 (top tine)
+    drawLine(1.40f, 5.10f,  1.20f, 5.60f, 1.8f);
+    drawLine(1.40f, 5.10f,  1.70f, 5.55f, 1.8f);
+
+    glPopMatrix();
+}
+
+// ============================================================================
 // Timer – animates cat back and forth (day only)
+//        animates deer back and forth (night only)
 // ============================================================================
 void timer(int /*value*/) {
     if (timeState == DAY) {
         catX += catDir * CAT_SPEED;
         if (catX > CAT_X_MAX) { catX = CAT_X_MAX; catDir = -1.0f; }
         if (catX < CAT_X_MIN) { catX = CAT_X_MIN; catDir =  1.0f; }
+    } else {
+        deerX += deerDir * DEER_SPEED;
+        if (deerX > DEER_X_MAX) { deerX = DEER_X_MAX; deerDir = -1.0f; }
+        if (deerX < DEER_X_MIN) { deerX = DEER_X_MIN; deerDir =  1.0f; }
     }
     glutPostRedisplay();
     glutTimerFunc(16, timer, 0);
@@ -379,6 +559,7 @@ void display() {
     drawRiver();
     drawFence();
     drawCat();
+    drawDeer();
     drawSun();
     drawMoon();
     glutSwapBuffers();
