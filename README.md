@@ -4,6 +4,9 @@
 
 `Zero Point` renders a split world: a dense forest in the upper-left, a quiet village in the lower-right, and a diagonal river between them. The world transitions between day and night, changing lighting, color palette, and active wildlife.
 
+![Zero Point Showcase](planning/showcase.gif)
+
+
 ## Scene Overview
 
 | Zone | Elements |
