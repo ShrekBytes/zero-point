@@ -683,6 +683,17 @@ void drawCat() {
     glPushMatrix();
     glTranslatef(catX, fenceBase(catX), 0.0f);   // move to current position
 
+    // Ground shadow (subtle alpha-blended ovals under the cat)
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+    glPushMatrix();
+    glScalef(1.0f, 0.32f, 1.0f);
+    fillCircle(-0.25f, -0.58f, 1.05f);
+    fillCircle( 0.55f, -0.58f, 0.85f);
+    glPopMatrix();
+    glDisable(GL_BLEND);
+
     // Body (tall oval)
     glColor3f(0.92f, 0.50f, 0.10f);
     glPushMatrix();
@@ -792,6 +803,17 @@ void drawDeer() {
     glPushMatrix();
     glTranslatef(deerX, forestBase(deerX), 0.0f);
     glScalef(deerDir, 1.0f, 1.0f);   // flip horizontally when moving left
+
+    // Ground shadow (subtle alpha-blended ovals under the deer)
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.08f, 0.06f, 0.04f, 0.20f);
+    glPushMatrix();
+    glScalef(1.0f, 0.28f, 1.0f);
+    fillCircle(0.10f, -9.85f, 1.85f);
+    fillCircle(0.95f, -9.70f, 0.95f);
+    glPopMatrix();
+    glDisable(GL_BLEND);
 
     // Legs (four lines with darker hoof tips)
     glColor3f(0.55f, 0.27f, 0.07f);
