@@ -1,40 +1,42 @@
-# Zero Point 🌲🏡
+# Zero Point
+
 **Where Forest Meets Village — A 2D OpenGL Environmental Simulation**
 
-A Computer Graphics Lab project built with OpenGL/FreeGLUT. The scene is split into two worlds — a forest and a village — divided by a diagonal river. The environment shifts between day and night, each revealing different elements and animals.
+A scene split into two worlds — a dense forest and a quiet village — divided by a diagonal river. The environment automatically cycles between day and night, each revealing different elements and animals.
 
-###
+## Scene
 
-## Scene Layout
-
-- **Sky (top)** — sun/moon, stars, clouds, birds
-- **Forest (upper-left)** — trees, tall grass, deer at night, fireflies
-- **Village (lower-right)** — house, windmill, fence, cat during day
-- **River (diagonal)** — natural boundary between the two worlds
-
-###
-
-## Features
-
-- Day/Night cycle with automatic timer toggle
-- Keyboard shortcut to manually switch states
-- Animated cat (day), deer (night), windmill, birds, fireflies
-- Graphics algorithms: Bresenham Line, DDA Line, Midpoint Circle
-- 2D transformations: translation, rotation, scaling
-
-###
+| Zone | Contents |
+|------|----------|
+| Sky | Sun / moon, drifting clouds, stars, birds |
+| Forest (upper-left) | Trees, tall grass, deer at night, fireflies |
+| Village (lower-right) | Houses, windmill, clothesline, fence, cat |
+| River (diagonal) | Animated flow streaks, muddy banks |
 
 ## Controls
 
 | Key | Action |
 |-----|--------|
-| `d` | Switch to Day |
-| `n` | Switch to Night |
+| `Space` | Toggle day / night |
+| `ESC` / `q` | Quit |
 
-###
+The scene also auto-toggles every ~8 seconds.
 
-## Built With
+## Features
 
-- C++
-- OpenGL
-- FreeGLUT
+- Day/night cycle with distinct lighting, colors, and active elements
+- Animated cat (day), deer (night), birds (day), windmill, fireflies (night), and clouds
+- Line drawing algorithms: **Bresenham** (river edges), **DDA** (fence), **Midpoint Circle** (sun/moon)
+- 2D transformations: translation, rotation, and scaling
+
+## Build
+
+Requires **OpenGL** and **FreeGLUT**.
+
+```sh
+cmake -B build && cmake --build build
+./build/ZeroPoint
+```
+
+> On Linux, install dependencies with:
+> `sudo apt install freeglut3-dev` or equivalent for your distro.

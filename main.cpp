@@ -1,202 +1,231 @@
-// ============================================================================
-// main.cpp – Zero Point
-// ============================================================================
-// "Where Forest Meets Village: Time-Driven Environmental Simulation"
+// Zero Point — Where Forest Meets Village
+// CSE422: Computer Graphics Lab
 //
 // Controls:
-//   Spacebar  – Toggle day/night
-//   ESC / q   – Quit
-// ============================================================================
+//   Spacebar — Toggle day/night
+//   ESC / Q  — Quit
 
 #include <GL/glut.h>
 #include <cmath>
 #include <cstdlib>
 
-// ============================================================================
-// Globals
-// ============================================================================
+// =============================================================================
+// Global State
+// =============================================================================
+
 enum TimeState { DAY, NIGHT };
 TimeState timeState = DAY;
 
+// World coordinate bounds
 const float WORLD_LEFT   = -40.0f;
 const float WORLD_RIGHT  =  40.0f;
 const float WORLD_BOTTOM = -30.0f;
 const float WORLD_TOP    =  30.0f;
 
-// Cat animation globals
+// =============================================================================
+// Animation Variables
+// =============================================================================
+
+float windmillAngle = 0.0f;
+
+// Cat moves along the village fence (day only)
 float catX   = -5.0f;
-float catDir =  1.0f;
+float catDir =  1.0f;   // +1 = moving right, -1 = moving left
 const float CAT_SPEED = 0.04f;
 const float CAT_X_MIN = -18.0f;
 const float CAT_X_MAX =  14.0f;
 
-// Deer animation globals
+// Deer moves along the forest bank (night only)
 float deerX   = -5.0f;
 float deerDir =  1.0f;
 const float DEER_SPEED = 0.03f;
 const float DEER_X_MIN = -18.0f;
 const float DEER_X_MAX =  8.0f;
 
-
-float windmillAngle = 0.0f;
-
-// Bird animation globals (Person 1)
-float birdX[3]        = { -45.0f, -55.0f, -62.0f };  // start off-screen left
-float birdY[3]        = {  22.0f,  18.5f,  25.0f };  // different sky heights
+// Three birds fly across the sky (day only)
+float birdX[3] = { -45.0f, -55.0f, -62.0f };
+float birdY[3] = {  22.0f,  18.5f,  25.0f };
 const float BIRD_SPEED = 0.035f;
 
-// ============================================================================
-// Forest + fireflies (night only)
-// ============================================================================
-static constexpr int FIREFLY_COUNT = 28;
-static constexpr int FIREFLY_VILLAGE_COUNT = 2;
-static float fireflyX[FIREFLY_COUNT];
-static float fireflyY[FIREFLY_COUNT];
+// Four clouds drift across the sky at different speeds (day only)
+float cloudOffset[4]      = { 0.0f, 0.0f, 0.0f, 0.0f };
+const float CLOUD_SPEED[4] = { 0.01f, 0.03f, 0.005f, 0.02f };
 
-static constexpr float FIREFLY_FOREST_X_MIN = -38.0f;
-static constexpr float FIREFLY_FOREST_X_MAX = 8.0f;
-static constexpr float FIREFLY_VILLAGE_X_MIN = 12.0f;
-static constexpr float FIREFLY_VILLAGE_X_MAX = 36.0f;
-static constexpr float FIREFLY_VILLAGE_Y_MIN = -20.0f;
-static constexpr float FIREFLY_VILLAGE_Y_MAX = -4.0f;
+// Stars are only visible at night
+const int STAR_COUNT = 60;
+float starX[STAR_COUNT];
+float starY[STAR_COUNT];
 
+// =============================================================================
+// Grass & Firefly Data
+// =============================================================================
+
+// Each grass tuft has a position, height, spread, and lean direction
 struct GrassTuft {
-    float x;
-    float y;
-    float h;
-    float spread;
-    float lean;
+    float x, y;       // base position
+    float h;          // height
+    float spread;     // how wide the blades fan out
+    float lean;       // slight horizontal lean
 };
 
-static constexpr int FOREST_BANK_GRASS_COUNT = 42;
-static constexpr int FOREST_PATCH_GRASS_COUNT = 84;
-static constexpr int VILLAGE_GRASS_COUNT = 74;
+const int FOREST_BANK_GRASS_COUNT  = 42;
+const int FOREST_PATCH_GRASS_COUNT = 84;
+const int VILLAGE_GRASS_COUNT      = 74;
+const int FIREFLY_COUNT            = 28;
+const int FIREFLY_VILLAGE_COUNT    = 2;   // most fireflies stay in the forest
 
-static GrassTuft forestBankGrass[FOREST_BANK_GRASS_COUNT];
-static GrassTuft forestPatchGrass[FOREST_PATCH_GRASS_COUNT];
-static GrassTuft villageGrass[VILLAGE_GRASS_COUNT];
+GrassTuft forestBankGrass[FOREST_BANK_GRASS_COUNT];
+GrassTuft forestPatchGrass[FOREST_PATCH_GRASS_COUNT];
+GrassTuft villageGrass[VILLAGE_GRASS_COUNT];
 
-// Forest bounding box (upper-left triangle area, tuned to match sketch)
-static constexpr float FOREST_X_MIN = -38.0f;
-static constexpr float FOREST_X_MAX =  34.0f;
-static constexpr float FOREST_Y_MIN = -16.0f;
-static constexpr float FOREST_Y_MAX =  9.0f;
+float fireflyX[FIREFLY_COUNT];
+float fireflyY[FIREFLY_COUNT];
 
-static float frand01() {
+// Firefly zone limits
+const float FIREFLY_FOREST_X_MIN  = -38.0f;
+const float FIREFLY_FOREST_X_MAX  =   8.0f;
+const float FIREFLY_VILLAGE_X_MIN =  12.0f;
+const float FIREFLY_VILLAGE_X_MAX =  36.0f;
+const float FIREFLY_VILLAGE_Y_MIN = -20.0f;
+const float FIREFLY_VILLAGE_Y_MAX =  -4.0f;
+const float FOREST_Y_MIN          = -16.0f;
+const float FOREST_Y_MAX          =   9.0f;
+
+// =============================================================================
+// Small Helper Functions
+// =============================================================================
+
+// Random float between 0 and 1
+float frand01() {
     return (float)rand() / (float)RAND_MAX;
 }
 
-static float clampf(float v, float lo, float hi) {
+// Clamp a value between lo and hi
+float clampf(float v, float lo, float hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
 }
 
-static float fireflyForestBankY(float x) {
-    // Matches the river upper bank: (40,10) -> (-40,-20)
+// Y coordinate on the upper river bank at a given X
+// The upper bank goes from (40, 10) to (-40, -20)
+float riverUpperBankY(float x) {
     return 10.0f + (x - 40.0f) * 0.375f;
 }
 
-static float villageRiverBankY(float x) {
-    // Matches the river lower bank: (40,5) -> (-40,-30)
+// Y coordinate on the lower river bank at a given X
+// The lower bank goes from (40, 5) to (-40, -30)
+float riverLowerBankY(float x) {
     return 5.0f + (x - 40.0f) * 0.4375f;
 }
 
-// Forward declaration for helpers used before their definitions.
-void fillRect(float x, float y, float w, float h);
+// Baseline for the fence and cat (just inside the village side of the river)
+float fenceBase(float x) {
+    return riverLowerBankY(x) - 1.2f;
+}
 
-static void initFireflies() {
-    // Keep almost all fireflies in the forest; allow only a couple in village.
+// Baseline for the deer (above the upper river bank on the forest side)
+float forestBase(float x) {
+    return riverUpperBankY(x) + 4.5f;
+}
+
+// =============================================================================
+// Initialise Stars, Grass, and Firefly Positions (called once at startup)
+// =============================================================================
+
+void initStars() {
+    for (int i = 0; i < STAR_COUNT; i++) {
+        starX[i] = -40.0f + frand01() * 80.0f;
+        starY[i] =   6.0f + frand01() * 24.0f;
+    }
+}
+
+void initFireflies() {
     for (int i = 0; i < FIREFLY_COUNT; i++) {
         if (i < FIREFLY_VILLAGE_COUNT) {
+            // A couple of fireflies appear in the village area
             fireflyX[i] = FIREFLY_VILLAGE_X_MIN + frand01() * (FIREFLY_VILLAGE_X_MAX - FIREFLY_VILLAGE_X_MIN);
             fireflyY[i] = FIREFLY_VILLAGE_Y_MIN + frand01() * (FIREFLY_VILLAGE_Y_MAX - FIREFLY_VILLAGE_Y_MIN);
         } else {
-            float x = FIREFLY_FOREST_X_MIN + frand01() * (FIREFLY_FOREST_X_MAX - FIREFLY_FOREST_X_MIN);
-            float yMin = fireflyForestBankY(x) + 0.8f;
+            // The rest are scattered through the forest
+            float x    = FIREFLY_FOREST_X_MIN + frand01() * (FIREFLY_FOREST_X_MAX - FIREFLY_FOREST_X_MIN);
+            float yMin = riverUpperBankY(x) + 0.8f;
             if (yMin < FOREST_Y_MIN) yMin = FOREST_Y_MIN;
-            if (yMin > FOREST_Y_MAX - 0.2f) yMin = FOREST_Y_MAX - 0.2f;
+            if (yMin > FOREST_Y_MAX) yMin = FOREST_Y_MAX;
             fireflyX[i] = x;
             fireflyY[i] = yMin + frand01() * (FOREST_Y_MAX - yMin);
         }
     }
 }
 
-static void initGrass() {
-    // Forest bank grass: random x + varied offsets to avoid visible straight rows.
+void initGrass() {
+    // Grass along the forest river bank
     for (int i = 0; i < FOREST_BANK_GRASS_COUNT; i++) {
-        float x = -37.5f + frand01() * 72.0f;
-        float baseY = fireflyForestBankY(x) + 0.12f + frand01() * 0.40f;
-        float leftWeight = 1.0f - ((x + 40.0f) / 80.0f);
-        forestBankGrass[i] = {
-            x,
-            baseY,
-            0.62f + 0.44f * leftWeight + frand01() * 0.26f,
-            0.07f + frand01() * 0.06f,
-            (frand01() - 0.5f) * 0.18f
-        };
+        float x     = -37.5f + frand01() * 72.0f;
+        float leftW = 1.0f - ((x + 40.0f) / 80.0f);  // taller on the left side
+        forestBankGrass[i].x      = x;
+        forestBankGrass[i].y      = riverUpperBankY(x) + 0.12f + frand01() * 0.40f;
+        forestBankGrass[i].h      = 0.62f + 0.44f * leftW + frand01() * 0.26f;
+        forestBankGrass[i].spread = 0.07f + frand01() * 0.06f;
+        forestBankGrass[i].lean   = (frand01() - 0.5f) * 0.18f;
     }
 
-    // Forest interior grass: rejection sample points above upper bank to keep natural scatter.
+    // Grass scattered through the forest interior
     for (int i = 0; i < FOREST_PATCH_GRASS_COUNT; i++) {
-        float x = 0.0f;
-        float y = 0.0f;
+        float x = 0.0f, y = 0.0f;
+        // Try to place the tuft above the river bank
         for (int tries = 0; tries < 60; tries++) {
             float tx = -37.0f + frand01() * 72.0f;
             float ty = -14.0f + frand01() * 23.0f;
-            if (ty > fireflyForestBankY(tx) + 1.05f) {
+            if (ty > riverUpperBankY(tx) + 1.05f) {
                 x = tx;
                 y = ty;
                 break;
             }
         }
+        // Fallback if no valid spot found
         if (x == 0.0f && y == 0.0f) {
             x = -37.0f + frand01() * 72.0f;
-            y = fireflyForestBankY(x) + 1.25f + frand01() * 5.5f;
+            y = riverUpperBankY(x) + 1.25f + frand01() * 5.5f;
         }
-
-        float leftWeight = 1.0f - ((x + 40.0f) / 80.0f);
-        forestPatchGrass[i] = {
-            x,
-            y,
-            0.56f + 0.48f * leftWeight + frand01() * 0.28f,
-            0.08f + frand01() * 0.06f,
-            (frand01() - 0.5f) * 0.14f
-        };
+        float leftW = 1.0f - ((x + 40.0f) / 80.0f);
+        forestPatchGrass[i].x      = x;
+        forestPatchGrass[i].y      = y;
+        forestPatchGrass[i].h      = 0.56f + 0.48f * leftW + frand01() * 0.28f;
+        forestPatchGrass[i].spread = 0.08f + frand01() * 0.06f;
+        forestPatchGrass[i].lean   = (frand01() - 0.5f) * 0.14f;
     }
 
-    // Village grass: random in village triangle under lower river bank.
+    // Grass in the village ground area
     for (int i = 0; i < VILLAGE_GRASS_COUNT; i++) {
-        float x = 0.0f;
-        float y = 0.0f;
+        float x = 0.0f, y = 0.0f;
         for (int tries = 0; tries < 60; tries++) {
             float tx = -37.0f + frand01() * 74.0f;
-            float upper = villageRiverBankY(tx) - 1.0f;
             float ty = -29.0f + frand01() * 20.0f;
-            if (ty < upper) {
+            if (ty < riverLowerBankY(tx) - 1.0f) {
                 x = tx;
                 y = ty;
                 break;
             }
         }
+        // Fallback if no valid spot found
         if (x == 0.0f && y == 0.0f) {
             x = -37.0f + frand01() * 74.0f;
             y = -27.5f + frand01() * 12.0f;
         }
-
-        villageGrass[i] = {
-            x,
-            y,
-            0.76f + frand01() * 0.36f,
-            0.40f + frand01() * 0.18f,
-            (frand01() - 0.5f) * 0.12f
-        };
+        villageGrass[i].x      = x;
+        villageGrass[i].y      = y;
+        villageGrass[i].h      = 0.76f + frand01() * 0.36f;
+        villageGrass[i].spread = 0.40f + frand01() * 0.18f;
+        villageGrass[i].lean   = (frand01() - 0.5f) * 0.12f;
     }
 }
 
-// ============================================================================
+// =============================================================================
 // ALGORITHM: DDA Line Drawing
-// ============================================================================
+// Computes intermediate points using floating-point increments each step.
+// =============================================================================
+
 void drawLineDDA(float x1, float y1, float x2, float y2) {
     float dx = x2 - x1;
     float dy = y2 - y1;
@@ -209,260 +238,294 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
         return;
     }
 
-    float xInc = dx / (float)steps;
-    float yInc = dy / (float)steps;
-
-    float x = x1;
-    float y = y1;
+    float xInc = dx / steps;
+    float yInc = dy / steps;
+    float x = x1, y = y1;
 
     glBegin(GL_POINTS);
     for (int i = 0; i <= steps; i++) {
-        glVertex2f(round(x), round(y));
+        glVertex2f(roundf(x), roundf(y));
         x += xInc;
         y += yInc;
     }
     glEnd();
 }
 
-// ============================================================================
-// ALGORITHM: Bresenham's Line Drawing  [Person 1 — owns this]
-//
-// Works by tracking a cumulative error term (err) that decides whether
-// to step in the minor axis each iteration — integer-only arithmetic,
-// no floating-point needed.
-//
-//   dx, dy  = absolute delta in each axis
-//   sx, sy  = step direction (+1 or -1) for each axis
-//   err     = current accumulated error
-//   e2      = doubled error used for the two threshold comparisons
-//
-// Used for: both edges of the diagonal river
-// ============================================================================
+// =============================================================================
+// ALGORITHM: Bresenham Line Drawing
+// Uses integer error accumulation — no floating-point needed.
+//   err tracks how far we have drifted from the ideal line
+//   e2  is the doubled error used to decide which axis to step
+// =============================================================================
+
 void drawLineBresenham(int x1, int y1, int x2, int y2) {
     int dx  =  abs(x2 - x1);
     int dy  =  abs(y2 - y1);
-    int sx  = (x1 < x2) ? 1 : -1;   // horizontal step direction
-    int sy  = (y1 < y2) ? 1 : -1;   // vertical step direction
-    int err =  dx - dy;              // initial error
+    int sx  = (x1 < x2) ? 1 : -1;
+    int sy  = (y1 < y2) ? 1 : -1;
+    int err =  dx - dy;
 
     glBegin(GL_POINTS);
     while (true) {
         glVertex2i(x1, y1);
-        if (x1 == x2 && y1 == y2) break;   // reached destination
-
+        if (x1 == x2 && y1 == y2) break;
         int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; x1 += sx; }   // step horizontally
-        if (e2 <  dx) { err += dx; y1 += sy; }   // step vertically
+        if (e2 > -dy) { err -= dy; x1 += sx; }
+        if (e2 <  dx) { err += dx; y1 += sy; }
     }
     glEnd();
 }
 
-// ============================================================================
-// Filled circle using triangle fan
-// ============================================================================
-void fillCircle(float xc, float yc, float radius) {
+// =============================================================================
+// ALGORITHM: Midpoint Circle Drawing
+// Uses integer decision variable to plot 8 symmetric points per step.
+// =============================================================================
+
+void drawMidpointCircle(float cx, float cy, float radius) {
+    int r = (int)radius;
+    int x = 0, y = r;
+    int d = 1 - r;
+
+    // Plot 8 symmetric points at once using reflections
+    auto plot8 = [&](int px, int py) {
+        glVertex2f(cx + px, cy + py); glVertex2f(cx - px, cy + py);
+        glVertex2f(cx + px, cy - py); glVertex2f(cx - px, cy - py);
+        glVertex2f(cx + py, cy + px); glVertex2f(cx - py, cy + px);
+        glVertex2f(cx + py, cy - px); glVertex2f(cx - py, cy - px);
+    };
+
+    glBegin(GL_POINTS);
+    while (x <= y) {
+        plot8(x, y);
+        if (d < 0) d += 2 * x + 3;
+        else      { d += 2 * (x - y) + 5; y--; }
+        x++;
+    }
+    glEnd();
+}
+
+// Filled version: draws horizontal spans derived from the circle equation
+void fillMidpointCircle(float cx, float cy, float radius) {
+    glBegin(GL_LINES);
+    for (float dy = -radius; dy <= radius; dy += 0.05f) {
+        float dx = sqrtf(radius * radius - dy * dy);
+        glVertex2f(cx - dx, cy + dy);
+        glVertex2f(cx + dx, cy + dy);
+    }
+    glEnd();
+}
+
+// =============================================================================
+// Primitive Helpers
+// =============================================================================
+
+// Filled circle using a triangle fan
+void fillCircle(float cx, float cy, float radius) {
     glBegin(GL_TRIANGLE_FAN);
-    glVertex2f(xc, yc);
-    int segments = 60;
-    for (int i = 0; i <= segments; i++) {
-        float angle = 2.0f * M_PI * (float)i / (float)segments;
-        float x = xc + radius * cos(angle);
-        float y = yc + radius * sin(angle);
-        glVertex2f(x, y);
+    glVertex2f(cx, cy);
+    for (int i = 0; i <= 60; i++) {
+        float angle = 2.0f * M_PI * i / 60.0f;
+        glVertex2f(cx + radius * cosf(angle), cy + radius * sinf(angle));
     }
     glEnd();
 }
 
-// ============================================================================
-// Environment Drawing
-// ============================================================================
+// Filled rectangle
+void fillRect(float x, float y, float w, float h) {
+    glBegin(GL_QUADS);
+    glVertex2f(x,     y    );
+    glVertex2f(x + w, y    );
+    glVertex2f(x + w, y + h);
+    glVertex2f(x,     y + h);
+    glEnd();
+}
+
+// Smooth line with settable width
+void drawLine(float x1, float y1, float x2, float y2, float width = 1.0f) {
+    glLineWidth(width);
+    glEnable(GL_LINE_SMOOTH);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+    glBegin(GL_LINES);
+    glVertex2f(x1, y1);
+    glVertex2f(x2, y2);
+    glEnd();
+    glDisable(GL_LINE_SMOOTH);
+    glLineWidth(1.0f);
+}
+
+// =============================================================================
+// Sky  —  background, clouds (day) or stars (night)
+// =============================================================================
 
 void drawSky() {
-    if (timeState == DAY) {
-        glClearColor(0.53f, 0.81f, 0.92f, 1.0f);   // light blue
-    } else {
-        glClearColor(0.04f, 0.10f, 0.16f, 1.0f);   // dark blue
-    }
+    if (timeState == DAY) glClearColor(0.53f, 0.81f, 0.92f, 1.0f);  // light blue
+    else                  glClearColor(0.04f, 0.10f, 0.16f, 1.0f);  // dark navy
     glClear(GL_COLOR_BUFFER_BIT);
+
+    if (timeState == DAY) {
+        // Four clouds drifting right to left at different speeds
+        glColor3f(1.0f, 1.0f, 1.0f);
+
+        float c1 = 45.0f - fmodf(28.0f + cloudOffset[0], 90.0f);
+        fillMidpointCircle(c1,        24.0f, 3.0f);
+        fillMidpointCircle(c1 + 3.5f, 25.0f, 4.0f);
+        fillMidpointCircle(c1 + 7.0f, 24.0f, 3.0f);
+
+        float c2 = 45.0f - fmodf(10.0f + cloudOffset[1], 90.0f);
+        fillMidpointCircle(c2,        26.0f, 3.5f);
+        fillMidpointCircle(c2 + 4.0f, 27.0f, 4.5f);
+        fillMidpointCircle(c2 + 8.0f, 26.0f, 3.5f);
+
+        float c3 = 45.0f - fmodf(65.0f + cloudOffset[2], 90.0f);
+        fillMidpointCircle(c3,        22.0f, 2.5f);
+        fillMidpointCircle(c3 + 3.0f, 23.0f, 3.0f);
+        fillMidpointCircle(c3 + 6.0f, 22.0f, 2.5f);
+
+        float c4 = 45.0f - fmodf(45.0f + cloudOffset[3], 90.0f);
+        fillMidpointCircle(c4,        25.0f, 3.0f);
+        fillMidpointCircle(c4 + 3.5f, 26.0f, 3.5f);
+        fillMidpointCircle(c4 + 7.0f, 25.0f, 3.0f);
+    } else {
+        // Stars rendered as bright points across the upper sky
+        glColor3f(0.95f, 0.95f, 0.85f);
+        glPointSize(2.5f);
+        glBegin(GL_POINTS);
+        for (int i = 0; i < STAR_COUNT; i++)
+            glVertex2f(starX[i], starY[i]);
+        glEnd();
+        glPointSize(1.0f);
+    }
 }
 
 void drawSun() {
     if (timeState != DAY) return;
-    glColor3f(1.0f, 1.0f, 0.0f);
-    fillCircle(25.0f, 20.0f, 3.5f);
+    glColor3f(1.0f, 0.95f, 0.0f);
+    fillMidpointCircle(25.0f, 20.0f, 4.0f);
 }
 
 void drawMoon() {
     if (timeState != NIGHT) return;
+    // Full circle, then mask off a portion to create a crescent shape
     glColor3f(0.94f, 0.94f, 0.82f);
-    fillCircle(-25.0f, 20.0f, 3.5f);
+    fillMidpointCircle(-25.0f, 20.0f, 4.0f);
+    glColor3f(0.04f, 0.10f, 0.16f);   // same colour as sky to cut out the crescent
+    fillMidpointCircle(-23.5f, 21.0f, 3.5f);
 }
 
-// ============================================================================
-// RIVER  [Person 1 — owns this]
-//
-// The diagonal river runs from top-right to bottom-left across the scene.
-// Two parallel Bresenham edges define the river boundaries; the body is
-// a filled GL_POLYGON between them, with a shimmer strip in the centre.
-//
-// Upper edge: (40,10) -> (-40,-20)   ALGORITHM: Bresenham
-// Lower edge: (40, 5) -> (-40,-30)   ALGORITHM: Bresenham
-// ============================================================================
+// =============================================================================
+// River  —  diagonal strip from top-right to bottom-left
+// Upper bank: (40, 10) to (-40, -20)
+// Lower bank: (40,  5) to (-40, -30)
+// =============================================================================
+
 void drawRiver() {
-    const float riverUpperRight = 10.0f;
-    const float riverLowerRight = 5.0f;
-    const float riverUpperLeft  = -20.0f;
-    const float riverLowerLeft  = -30.0f;
-
-    // Interpolate directly from the outer river edges so inner strip always follows.
-    const float innerTopRatio = 0.30f;
-    const float innerBotRatio = 0.70f;
-
-    const float innerUpperRight = riverUpperRight + (riverLowerRight - riverUpperRight) * innerTopRatio;
-    const float innerLowerRight = riverUpperRight + (riverLowerRight - riverUpperRight) * innerBotRatio;
-    const float innerUpperLeft  = riverUpperLeft  + (riverLowerLeft  - riverUpperLeft)  * innerTopRatio;
-    const float innerLowerLeft  = riverUpperLeft  + (riverLowerLeft  - riverUpperLeft)  * innerBotRatio;
-
-    // --- Main river body: filled polygon between the two Bresenham edges ---
+    // Main river body
     if (timeState == DAY) glColor3f(0.20f, 0.52f, 0.80f);
-    else                 glColor3f(0.07f, 0.20f, 0.34f);
+    else                  glColor3f(0.07f, 0.20f, 0.34f);
     glBegin(GL_POLYGON);
-        glVertex2f( 40.0f,  riverUpperRight);   // upper-right
-        glVertex2f( 40.0f,  riverLowerRight);   // lower-right touches village boundary
-        glVertex2f(-40.0f,  riverLowerLeft);    // lower-left touches village boundary
-        glVertex2f(-40.0f,  riverUpperLeft);    // upper-left
+        glVertex2f( 40.0f,  10.0f);
+        glVertex2f( 40.0f,   5.0f);
+        glVertex2f(-40.0f, -30.0f);
+        glVertex2f(-40.0f, -20.0f);
     glEnd();
 
-    // --- Centre shimmer strip: lighter blue highlight ---
-    // Keep margins proportional to river width on both ends.
+    // Lighter shimmer strip running through the centre of the river
+    const float iTopR  = 10.0f + (5.0f  - 10.0f) * 0.30f;  // 30% from top on the right
+    const float iBotR  = 10.0f + (5.0f  - 10.0f) * 0.70f;  // 70% from top on the right
+    const float iTopL  = -20.0f + (-30.0f - -20.0f) * 0.30f;
+    const float iBotL  = -20.0f + (-30.0f - -20.0f) * 0.70f;
     if (timeState == DAY) glColor3f(0.38f, 0.68f, 0.92f);
-    else                 glColor3f(0.13f, 0.30f, 0.46f);
+    else                  glColor3f(0.13f, 0.30f, 0.46f);
     glBegin(GL_POLYGON);
-        glVertex2f( 40.0f, innerUpperRight);
-        glVertex2f( 40.0f, innerLowerRight);
-        glVertex2f(-40.0f, innerLowerLeft);
-        glVertex2f(-40.0f, innerUpperLeft);
+        glVertex2f( 40.0f, iTopR); glVertex2f( 40.0f, iBotR);
+        glVertex2f(-40.0f, iBotL); glVertex2f(-40.0f, iTopL);
     glEnd();
 
-    // --- Lively streaks flowing along the river direction ---
+    // Animated flow streaks (shift driven by windmill angle for a shared animation)
     float flowShift = fmodf(windmillAngle * 0.085f, 10.0f);
     if (timeState == DAY) glColor3f(0.55f, 0.80f, 0.98f);
-    else                 glColor3f(0.20f, 0.33f, 0.48f);
+    else                  glColor3f(0.20f, 0.33f, 0.48f);
     glLineWidth(1.2f);
     glEnable(GL_LINE_SMOOTH);
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+    float streakAnchors[] = { -37.0f, -28.0f, -19.0f, -10.0f, -1.0f, 8.0f, 17.0f, 26.0f, 35.0f };
     glBegin(GL_LINES);
-    const float streakAnchors[] = {-37.0f, -28.0f, -19.0f, -10.0f, -1.0f, 8.0f, 17.0f, 26.0f, 35.0f};
-    for (float a : streakAnchors) {
-        float x1 = a - flowShift;
+    for (int i = 0; i < 9; i++) {
+        float x1 = streakAnchors[i] - flowShift;
         if (x1 < -40.0f) x1 += 80.0f;
         float x2 = x1 + 6.5f;
         if (x2 > 40.0f) x2 = 40.0f;
-
-        float up1 = 10.0f + (x1 - 40.0f) * 0.375f;
-        float lo1 =  5.0f + (x1 - 40.0f) * 0.4375f;
-        float up2 = 10.0f + (x2 - 40.0f) * 0.375f;
-        float lo2 =  5.0f + (x2 - 40.0f) * 0.4375f;
-
-        float y1 = (up1 + lo1) * 0.5f + 0.30f;
-        float y2 = (up2 + lo2) * 0.5f + 0.30f;
+        float y1 = (riverUpperBankY(x1) + riverLowerBankY(x1)) * 0.5f + 0.30f;
+        float y2 = (riverUpperBankY(x2) + riverLowerBankY(x2)) * 0.5f + 0.30f;
         glVertex2f(x1, y1);
         glVertex2f(x2, y2);
     }
     glEnd();
+    glDisable(GL_LINE_SMOOTH);
+    glLineWidth(1.0f);
 
-    // Thin muddy strips at both river edges (inside water) to break the green-line look.
+    // Muddy edge strips just inside the water at each bank
     if (timeState == DAY) glColor3f(0.46f, 0.34f, 0.21f);
-    else                 glColor3f(0.28f, 0.20f, 0.13f);
-
+    else                  glColor3f(0.28f, 0.20f, 0.13f);
     glBegin(GL_POLYGON);
-        glVertex2f( 40.0f, 10.0f);
-        glVertex2f( 40.0f,  9.45f);
-        glVertex2f(-40.0f,-20.55f);
-        glVertex2f(-40.0f,-20.0f);
+        glVertex2f( 40.0f,  10.0f);   glVertex2f( 40.0f,   9.45f);
+        glVertex2f(-40.0f, -20.55f);  glVertex2f(-40.0f, -20.0f);
+    glEnd();
+    glBegin(GL_POLYGON);
+        glVertex2f( 40.0f,   5.0f);   glVertex2f( 40.0f,   5.55f);
+        glVertex2f(-40.0f, -29.45f);  glVertex2f(-40.0f, -30.0f);
     glEnd();
 
-    glBegin(GL_POLYGON);
-        glVertex2f( 40.0f, 5.0f);
-        glVertex2f( 40.0f, 5.55f);
-        glVertex2f(-40.0f,-29.45f);
-        glVertex2f(-40.0f,-30.0f);
-    glEnd();
-
-    // --- River banks: smooth continuous lines (no dotted points) ---
+    // Bank outlines drawn with Bresenham (required algorithm)
     glColor3f(0.36f, 0.24f, 0.11f);
     glLineWidth(1.35f);
     glBegin(GL_LINES);
         glVertex2f( 40.0f, 10.0f); glVertex2f(-40.0f, -20.0f);
         glVertex2f( 40.0f,  5.0f); glVertex2f(-40.0f, -30.0f);
     glEnd();
-    glDisable(GL_LINE_SMOOTH);
     glLineWidth(1.0f);
 }
 
-// ============================================================================
-// Helper: Y position on the village-side fence baseline
-// Village top boundary passes through (40,5) and (-40,-30), slope = 0.4375
-// Offset -1.2 so fence stays safely inside village ground.
-// ============================================================================
-float fenceBase(float x) {
-    return 5.0f + (x - 40.0f) * 0.4375f - 1.2f;
-}
+// =============================================================================
+// Forest  —  upper-left triangle
+// =============================================================================
 
-// ============================================================================
-// Helper: Y position on the forest-side (upper) river bank
-// Upper river bank passes through (40,10) and (-40,-20), slope = 0.375
-// Offset +4.5 upward so deer stands on dry ground well above the bank
-// ============================================================================
-float forestBase(float x) {
-    return 10.0f + (x - 40.0f) * 0.375f + 4.5f;
-}
-
-// ============================================================================
-// FOREST ZONE – upper-left side of the river
-// Includes: ground wedge, 3–4 scaled trees, and tall dense grass
-// ============================================================================
-static float riverUpperBankY(float x) {
-    // Upper river edge passes through (40,10) and (-40,-20), slope = 0.375
-    return 10.0f + (x - 40.0f) * 0.375f;
-}
-
-static void drawTree(float x, float y, float s) {
+// Draw a single tree at (x, y) with scale factor s
+void drawTree(float x, float y, float s) {
     glPushMatrix();
     glTranslatef(x, y, 0.0f);
-    glScalef(s, s, 1.0f); // TRANSFORM: Scaling (depth)
+    glScalef(s, s, 1.0f);   // scaling gives a sense of depth
 
-    // trunk
+    // Trunk
     glColor3f(0.42f, 0.24f, 0.07f);
     fillRect(-0.7f, -4.5f, 1.4f, 4.8f);
     glColor3f(0.28f, 0.14f, 0.03f);
-    fillRect(0.10f, -4.5f, 0.60f, 4.8f);
+    fillRect( 0.1f, -4.5f, 0.6f, 4.8f);   // shadow strip on right
 
-    // canopy (rounded clusters)
+    // Canopy (four overlapping circles)
     if (timeState == DAY) glColor3f(0.12f, 0.48f, 0.10f);
-    else                 glColor3f(0.06f, 0.26f, 0.07f);
-    fillCircle(0.0f, 0.2f, 2.4f);
+    else                  glColor3f(0.06f, 0.26f, 0.07f);
+    fillCircle( 0.0f,  0.2f, 2.4f);
     fillCircle(-1.7f, -0.3f, 1.9f);
     fillCircle( 1.6f, -0.3f, 1.9f);
-    fillCircle(0.0f, 1.7f, 1.9f);
+    fillCircle( 0.0f,  1.7f, 1.9f);
 
     glPopMatrix();
 }
 
 void drawForest() {
-    // Ground wedge (forest side) — draw before the river so the river sits on top
+    // Ground wedge on the forest side
     if (timeState == DAY) glColor3f(0.16f, 0.52f, 0.14f);
-    else                 glColor3f(0.06f, 0.22f, 0.08f);
-
+    else                  glColor3f(0.06f, 0.22f, 0.08f);
     glBegin(GL_POLYGON);
-        glVertex2f(-40.0f, 10.0f);
-        glVertex2f( 40.0f, 10.0f);
-        glVertex2f(-40.0f,-20.0f);
+        glVertex2f(-40.0f,  10.0f);
+        glVertex2f( 40.0f,  10.0f);
+        glVertex2f(-40.0f, -20.0f);
     glEnd();
 
-    // Simple hill silhouette on the top-left forest side.
+    // Rolling hill silhouette along the top-left
     if (timeState == DAY) glColor3f(0.19f, 0.45f, 0.15f);
-    else                 glColor3f(0.08f, 0.22f, 0.10f);
+    else                  glColor3f(0.08f, 0.22f, 0.10f);
     glBegin(GL_POLYGON);
         glVertex2f(-40.0f, 10.0f);
         glVertex2f(-39.0f, 11.2f);
@@ -475,54 +538,47 @@ void drawForest() {
         glVertex2f(-16.0f, 10.0f);
     glEnd();
 
-    // Tall, dense grass tufts in village style: left + center + right blades
+    // Grass tufts — three blades per tuft along the bank
     if (timeState == DAY) glColor3f(0.05f, 0.28f, 0.05f);
-    else                 glColor3f(0.02f, 0.14f, 0.03f);
-
+    else                  glColor3f(0.02f, 0.14f, 0.03f);
     glLineWidth(1.8f);
     glEnable(GL_LINE_SMOOTH);
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
     glBegin(GL_LINES);
-    for (const auto& g : forestBankGrass) {
-        float x = g.x;
-        float baseY = g.y;
-        float h = g.h;
-        float spread = g.spread;
-        float lean = g.lean;
-        glVertex2f(x, baseY); glVertex2f(x - spread * 2.0f + lean, baseY + h * 0.92f);
-        glVertex2f(x, baseY); glVertex2f(x + lean * 0.35f,        baseY + h * 1.10f);
-        glVertex2f(x, baseY); glVertex2f(x + spread * 2.0f + lean, baseY + h * 0.92f);
+    for (int i = 0; i < FOREST_BANK_GRASS_COUNT; i++) {
+        float x = forestBankGrass[i].x,  y = forestBankGrass[i].y;
+        float h = forestBankGrass[i].h,  s = forestBankGrass[i].spread;
+        float l = forestBankGrass[i].lean;
+        glVertex2f(x, y); glVertex2f(x - s * 2.0f + l, y + h * 0.92f);  // left blade
+        glVertex2f(x, y); glVertex2f(x + l * 0.35f,    y + h * 1.10f);  // centre blade
+        glVertex2f(x, y); glVertex2f(x + s * 2.0f + l, y + h * 0.92f);  // right blade
     }
-    for (const auto& g : forestPatchGrass) {
-        float x = g.x;
-        float y = g.y;
-        float h = g.h;
-        float spread = g.spread;
-        float lean = g.lean;
-        glVertex2f(x, y); glVertex2f(x - spread * 1.8f + lean, y + h * 0.84f);
-        glVertex2f(x, y); glVertex2f(x + lean * 0.35f,          y + h * 1.06f);
-        glVertex2f(x, y); glVertex2f(x + spread * 1.8f + lean, y + h * 0.84f);
+    // Patch grass scattered through the forest interior
+    for (int i = 0; i < FOREST_PATCH_GRASS_COUNT; i++) {
+        float x = forestPatchGrass[i].x,  y = forestPatchGrass[i].y;
+        float h = forestPatchGrass[i].h,  s = forestPatchGrass[i].spread;
+        float l = forestPatchGrass[i].lean;
+        glVertex2f(x, y); glVertex2f(x - s * 1.8f + l, y + h * 0.84f);
+        glVertex2f(x, y); glVertex2f(x + l * 0.35f,    y + h * 1.06f);
+        glVertex2f(x, y); glVertex2f(x + s * 1.8f + l, y + h * 0.84f);
     }
     glEnd();
     glDisable(GL_LINE_SMOOTH);
     glLineWidth(1.0f);
 
-    // Trees (different sizes for depth) drawn after grass so grass stays behind trunks.
-    drawTree(-33.0f,  6.0f, 1.25f);  // near/big
-    drawTree(-23.0f,  6.5f, 0.95f);  // mid
-    drawTree(-15.0f,  5.5f, 0.70f);  // far/small
-    drawTree(-30.0f, -1.0f, 0.90f);  // mid
-    drawTree(-8.5f,   4.2f, 0.78f);  // extra
-    drawTree(-20.5f, -2.8f, 0.72f);  // extra
-    drawTree(-35.5f, -4.8f, 0.68f);  // extra
+    // Trees at different sizes to suggest depth (near = big, far = small)
+    drawTree(-33.0f,  6.0f, 1.25f);
+    drawTree(-23.0f,  6.5f, 0.95f);
+    drawTree(-15.0f,  5.5f, 0.70f);
+    drawTree(-30.0f, -1.0f, 0.90f);
+    drawTree( -8.5f,  4.2f, 0.78f);
+    drawTree(-20.5f, -2.8f, 0.72f);
+    drawTree(-35.5f, -4.8f, 0.68f);
 }
 
-// ============================================================================
-// FIREFLIES – night only particle points drifting in forest bounding box
-// ============================================================================
+// Fireflies — night only, rendered as glowing points
 void drawFireflies() {
     if (timeState != NIGHT) return;
-
     glColor3f(0.75f, 0.95f, 0.25f);
     glPointSize(4.0f);
     glBegin(GL_POINTS);
@@ -533,193 +589,127 @@ void drawFireflies() {
     glPointSize(1.0f);
 }
 
-// ============================================================================
-// Helper: GL_LINES wrapper with settable width (fence rails & cat details)
-// ============================================================================
-void drawLine(float x1, float y1, float x2, float y2, float width = 1.0f) {
-    glLineWidth(width);
-    glEnable(GL_LINE_SMOOTH);
-    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-    glBegin(GL_LINES);
-        glVertex2f(x1, y1);
-        glVertex2f(x2, y2);
-    glEnd();
-    glDisable(GL_LINE_SMOOTH);
-    glLineWidth(1.0f);
-}
+// =============================================================================
+// Fence  —  runs along the village side of the river with a gap in the middle
+// =============================================================================
 
-// ============================================================================
-// Helper: filled rectangle (fence post bodies)
-// ============================================================================
-void fillRect(float x, float y, float w, float h) {
-    glBegin(GL_QUADS);
-    glVertex2f(x,   y);   glVertex2f(x+w, y);
-    glVertex2f(x+w, y+h); glVertex2f(x,   y+h);
-    glEnd();
-}
-
-// ============================================================================
-// FENCE – village side of the river
-//
-//  Post bodies     → fillRect (GL_QUADS)
-//  Post shading    → fillRect (GL_QUADS, darker strip for depth)
-//  Rails           → drawLine (GL_LINES + glLineWidth) – crisp & thick
-//  Rail highlight  → drawLine (lighter, thin)
-//  Rail shadow     → drawLine (darker, thin)
-//  Post caps/edges → drawLine (GL_LINES)
-//
-//  GAP: a gap is left in the middle of the fence (around x=0)
-// ============================================================================
 void drawFence() {
-    const float xStart      = -34.0f;
-    const float xEnd        =  38.0f;
-    const float postHW      =  0.52f;   // half-width of each post
-    const float postHeight  =  3.1f;    // height of post above baseline
-    const float postSpacing =  3.6f;    // centre-to-centre spacing
-    const float railHi      =  postHeight * 0.74f;
-    const float railLo      =  postHeight * 0.40f;
+    const float xStart   = -34.0f;
+    const float xEnd     =  38.0f;
+    const float postHW   =   0.52f;        // half-width of each post
+    const float postH    =   3.1f;         // height of each post
+    const float spacing  =   3.6f;         // gap between post centres
+    const float railHi   = postH * 0.74f;  // height of upper rail
+    const float railLo   = postH * 0.40f;  // height of lower rail
+    const float gapLeft  =  -4.5f;         // gate gap in the middle
+    const float gapRight =   4.5f;
 
-    // Gap parameters – centred around x = 0
-    const float gapCentre = 0.0f;
-    const float gapHalf   = 4.5f;   // half-width of gap (total gap ~9 units)
-    const float gapLeft   = gapCentre - gapHalf;   // -4.5
-    const float gapRight  = gapCentre + gapHalf;   //  4.5
-
-    // 1. Filled post bodies – skip posts inside the gap
-    for (float px = xStart; px <= xEnd + 0.1f; px += postSpacing) {
-        // Skip posts that fall inside the gap
-        if (px > gapLeft && px < gapRight) continue;
-
+    // Draw post bodies
+    for (float px = xStart; px <= xEnd + 0.1f; px += spacing) {
+        if (px > gapLeft && px < gapRight) continue;   // skip the gate gap
         float py = fenceBase(px);
-        // main body – medium dark brown
         glColor3f(0.42f, 0.24f, 0.07f);
-        fillRect(px - postHW, py, postHW * 2.0f, postHeight);
-        // right-side shadow strip for depth
+        fillRect(px - postHW, py, postHW * 2.0f, postH);
         glColor3f(0.28f, 0.14f, 0.03f);
-        fillRect(px + postHW * 0.42f, py, postHW * 0.58f, postHeight);
+        fillRect(px + postHW * 0.42f, py, postHW * 0.58f, postH);  // right-side shadow
     }
 
-    // 2. Rails – split into left segment and right segment to create gap
-    // Left rail segment: xStart to gapLeft
+    // Left rail segment (xStart to gapLeft)
     glColor3f(0.60f, 0.38f, 0.14f);
-    drawLine(xStart, fenceBase(xStart)+railHi, gapLeft, fenceBase(gapLeft)+railHi, 6.0f);
-    drawLine(xStart, fenceBase(xStart)+railLo, gapLeft, fenceBase(gapLeft)+railLo, 6.0f);
-    // Left rail highlight
+    drawLine(xStart, fenceBase(xStart) + railHi, gapLeft, fenceBase(gapLeft) + railHi, 6.0f);
+    drawLine(xStart, fenceBase(xStart) + railLo, gapLeft, fenceBase(gapLeft) + railLo, 6.0f);
     glColor3f(0.78f, 0.58f, 0.28f);
-    drawLine(xStart, fenceBase(xStart)+railHi+0.22f, gapLeft, fenceBase(gapLeft)+railHi+0.22f, 1.5f);
-    drawLine(xStart, fenceBase(xStart)+railLo+0.22f, gapLeft, fenceBase(gapLeft)+railLo+0.22f, 1.5f);
-    // Left rail shadow
+    drawLine(xStart, fenceBase(xStart) + railHi + 0.22f, gapLeft, fenceBase(gapLeft) + railHi + 0.22f, 1.5f);
+    drawLine(xStart, fenceBase(xStart) + railLo + 0.22f, gapLeft, fenceBase(gapLeft) + railLo + 0.22f, 1.5f);
     glColor3f(0.28f, 0.14f, 0.04f);
-    drawLine(xStart, fenceBase(xStart)+railHi-0.22f, gapLeft, fenceBase(gapLeft)+railHi-0.22f, 1.5f);
-    drawLine(xStart, fenceBase(xStart)+railLo-0.22f, gapLeft, fenceBase(gapLeft)+railLo-0.22f, 1.5f);
+    drawLine(xStart, fenceBase(xStart) + railHi - 0.22f, gapLeft, fenceBase(gapLeft) + railHi - 0.22f, 1.5f);
+    drawLine(xStart, fenceBase(xStart) + railLo - 0.22f, gapLeft, fenceBase(gapLeft) + railLo - 0.22f, 1.5f);
 
-    // Right rail segment: gapRight to xEnd
+    // Right rail segment (gapRight to xEnd)
     glColor3f(0.60f, 0.38f, 0.14f);
-    drawLine(gapRight, fenceBase(gapRight)+railHi, xEnd, fenceBase(xEnd)+railHi, 6.0f);
-    drawLine(gapRight, fenceBase(gapRight)+railLo, xEnd, fenceBase(xEnd)+railLo, 6.0f);
-    // Right rail highlight
+    drawLine(gapRight, fenceBase(gapRight) + railHi, xEnd, fenceBase(xEnd) + railHi, 6.0f);
+    drawLine(gapRight, fenceBase(gapRight) + railLo, xEnd, fenceBase(xEnd) + railLo, 6.0f);
     glColor3f(0.78f, 0.58f, 0.28f);
-    drawLine(gapRight, fenceBase(gapRight)+railHi+0.22f, xEnd, fenceBase(xEnd)+railHi+0.22f, 1.5f);
-    drawLine(gapRight, fenceBase(gapRight)+railLo+0.22f, xEnd, fenceBase(xEnd)+railLo+0.22f, 1.5f);
-    // Right rail shadow
+    drawLine(gapRight, fenceBase(gapRight) + railHi + 0.22f, xEnd, fenceBase(xEnd) + railHi + 0.22f, 1.5f);
+    drawLine(gapRight, fenceBase(gapRight) + railLo + 0.22f, xEnd, fenceBase(xEnd) + railLo + 0.22f, 1.5f);
     glColor3f(0.28f, 0.14f, 0.04f);
-    drawLine(gapRight, fenceBase(gapRight)+railHi-0.22f, xEnd, fenceBase(xEnd)+railHi-0.22f, 1.5f);
-    drawLine(gapRight, fenceBase(gapRight)+railLo-0.22f, xEnd, fenceBase(xEnd)+railLo-0.22f, 1.5f);
+    drawLine(gapRight, fenceBase(gapRight) + railHi - 0.22f, xEnd, fenceBase(xEnd) + railHi - 0.22f, 1.5f);
+    drawLine(gapRight, fenceBase(gapRight) + railLo - 0.22f, xEnd, fenceBase(xEnd) + railLo - 0.22f, 1.5f);
 
-    // 3. Post top caps and left edges – skip posts inside the gap
+    // Post top caps and left edge lines
     glColor3f(0.25f, 0.12f, 0.02f);
-    for (float px = xStart; px <= xEnd + 0.1f; px += postSpacing) {
+    for (float px = xStart; px <= xEnd + 0.1f; px += spacing) {
         if (px > gapLeft && px < gapRight) continue;
-
         float py  = fenceBase(px);
-        float top = py + postHeight;
-        drawLine(px - postHW, py,  px - postHW, top,  1.2f);  // left edge
-        drawLine(px - postHW, top, px + postHW, top,  1.2f);  // top cap
+        float top = py + postH;
+        drawLine(px - postHW, py,  px - postHW, top, 1.2f);  // left edge
+        drawLine(px - postHW, top, px + postHW, top, 1.2f);  // top cap
     }
 }
 
-// ============================================================================
-// CAT  (day only) – translated along fence baseline
-//
-//  Filled shapes   → fillCircle / GL_TRIANGLES
-//  Tail            → drawLine (GL_LINES, thick) – curves up behind body
-//  Whiskers/Mouth  → drawLine (GL_LINES, thin)
-//  TRANSFORM       → glTranslatef (translation along fence)
-// ============================================================================
+// =============================================================================
+// Cat  —  day only, walks back and forth along the fence
+// =============================================================================
+
 void drawCat() {
     if (timeState != DAY) return;
 
-    float baseY = fenceBase(catX);
     glPushMatrix();
-    glTranslatef(catX, baseY, 0.0f);  // TRANSFORM: Translation
+    glTranslatef(catX, fenceBase(catX), 0.0f);   // move to current position
 
-    // --- Body: tall oval for sitting posture (drawn first so tail overlaps at base) ---
+    // Body (tall oval)
     glColor3f(0.92f, 0.50f, 0.10f);
     glPushMatrix();
     glScalef(1.0f, 1.35f, 1.0f);
     fillCircle(0.0f, 0.75f, 1.05f);
     glPopMatrix();
 
-    // --- Tail: emerges from left side of body, sweeps up and curls over ---
-    // Draw as a series of thick filled circles along the arc path for a smooth, attached look
-    // Arc: base at body-left (-0.85, 0.6), sweeps left-down then up then curls right
+    // Tail (series of thick lines curling upward)
     glColor3f(0.78f, 0.36f, 0.05f);
-    drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 5.5f);   // base – emerges left from body
-    drawLine(-1.55f, 0.70f, -2.00f, 1.30f, 5.5f);   // curves upward
-    drawLine(-2.00f, 1.30f, -2.05f, 2.10f, 5.0f);   // rises up
-    drawLine(-2.05f, 2.10f, -1.70f, 2.70f, 4.5f);   // curls inward at top
-    drawLine(-1.70f, 2.70f, -1.10f, 2.90f, 4.0f);   // tip hooks right over body
-    // Lighter highlight stripe along tail centre
-    glColor3f(0.97f, 0.62f, 0.18f);
+    drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 5.5f);
+    drawLine(-1.55f, 0.70f, -2.00f, 1.30f, 5.5f);
+    drawLine(-2.00f, 1.30f, -2.05f, 2.10f, 5.0f);
+    drawLine(-2.05f, 2.10f, -1.70f, 2.70f, 4.5f);
+    drawLine(-1.70f, 2.70f, -1.10f, 2.90f, 4.0f);
+    glColor3f(0.97f, 0.62f, 0.18f);   // lighter highlight along centre of tail
     drawLine(-0.85f, 0.60f, -1.55f, 0.70f, 2.0f);
     drawLine(-1.55f, 0.70f, -2.00f, 1.30f, 2.0f);
     drawLine(-2.00f, 1.30f, -2.05f, 2.10f, 1.8f);
     drawLine(-2.05f, 2.10f, -1.70f, 2.70f, 1.6f);
     drawLine(-1.70f, 2.70f, -1.10f, 2.90f, 1.4f);
 
-    // --- Cream belly patch ---
+    // Belly patch (cream oval)
     glColor3f(0.97f, 0.87f, 0.68f);
     glPushMatrix();
     glScalef(0.62f, 0.80f, 1.0f);
     fillCircle(0.0f, 1.12f, 0.75f);
     glPopMatrix();
 
-    // --- Head: slightly wider than tall ---
+    // Head
     glColor3f(0.92f, 0.50f, 0.10f);
     glPushMatrix();
     glScalef(1.10f, 1.0f, 1.0f);
     fillCircle(0.0f, 2.55f, 0.78f);
     glPopMatrix();
 
-    // --- Cheek puffs (cream) ---
+    // Cheek puffs
     glColor3f(0.97f, 0.85f, 0.65f);
     fillCircle(-0.38f, 2.42f, 0.32f);
     fillCircle( 0.38f, 2.42f, 0.32f);
 
-    // --- Ears: tall pointed triangles ---
+    // Ears (outer orange, inner pink)
     glColor3f(0.92f, 0.50f, 0.10f);
     glBegin(GL_TRIANGLES);
-        glVertex2f(-0.62f, 3.05f);
-        glVertex2f(-0.30f, 3.72f);
-        glVertex2f( 0.05f, 3.08f);
-
-        glVertex2f( 0.10f, 3.08f);
-        glVertex2f( 0.42f, 3.72f);
-        glVertex2f( 0.72f, 3.05f);
+        glVertex2f(-0.62f, 3.05f); glVertex2f(-0.30f, 3.72f); glVertex2f( 0.05f, 3.08f);
+        glVertex2f( 0.10f, 3.08f); glVertex2f( 0.42f, 3.72f); glVertex2f( 0.72f, 3.05f);
     glEnd();
-    // pink inner ears
     glColor3f(0.94f, 0.65f, 0.65f);
     glBegin(GL_TRIANGLES);
-        glVertex2f(-0.52f, 3.10f);
-        glVertex2f(-0.30f, 3.52f);
-        glVertex2f(-0.02f, 3.12f);
-
-        glVertex2f( 0.18f, 3.12f);
-        glVertex2f( 0.42f, 3.52f);
-        glVertex2f( 0.62f, 3.10f);
+        glVertex2f(-0.52f, 3.10f); glVertex2f(-0.30f, 3.52f); glVertex2f(-0.02f, 3.12f);
+        glVertex2f( 0.18f, 3.12f); glVertex2f( 0.42f, 3.52f); glVertex2f( 0.62f, 3.10f);
     glEnd();
 
-    // --- Eyes: green iris, dark pupil, white shine ---
+    // Eyes (green iris, dark pupil, white shine dot)
     glColor3f(0.22f, 0.65f, 0.20f);
     fillCircle(-0.28f, 2.62f, 0.18f);
     fillCircle( 0.28f, 2.62f, 0.18f);
@@ -730,7 +720,7 @@ void drawCat() {
     fillCircle(-0.22f, 2.67f, 0.04f);
     fillCircle( 0.34f, 2.67f, 0.04f);
 
-    // --- Nose: small pink triangle ---
+    // Nose
     glColor3f(0.90f, 0.38f, 0.38f);
     glBegin(GL_TRIANGLES);
         glVertex2f(-0.10f, 2.36f);
@@ -738,84 +728,72 @@ void drawCat() {
         glVertex2f( 0.00f, 2.25f);
     glEnd();
 
-    // --- Mouth: two short lines from nose tip ---
+    // Mouth
     glColor3f(0.30f, 0.08f, 0.05f);
-    drawLine( 0.00f, 2.25f,  -0.14f, 2.16f,  1.5f);
-    drawLine( 0.00f, 2.25f,   0.14f, 2.16f,  1.5f);
+    drawLine( 0.00f, 2.25f, -0.14f, 2.16f, 1.5f);
+    drawLine( 0.00f, 2.25f,  0.14f, 2.16f, 1.5f);
 
-    // --- Whiskers: 3 per side, fanning from cheeks ---
+    // Whiskers (3 per side)
     glColor3f(0.96f, 0.94f, 0.84f);
-    drawLine(-0.10f, 2.38f,  -1.10f, 2.52f,  1.2f);
-    drawLine(-0.10f, 2.34f,  -1.10f, 2.34f,  1.2f);
-    drawLine(-0.10f, 2.30f,  -1.10f, 2.16f,  1.2f);
-    drawLine( 0.10f, 2.38f,   1.10f, 2.52f,  1.2f);
-    drawLine( 0.10f, 2.34f,   1.10f, 2.34f,  1.2f);
-    drawLine( 0.10f, 2.30f,   1.10f, 2.16f,  1.2f);
+    drawLine(-0.10f, 2.38f, -1.10f, 2.52f, 1.2f);
+    drawLine(-0.10f, 2.34f, -1.10f, 2.34f, 1.2f);
+    drawLine(-0.10f, 2.30f, -1.10f, 2.16f, 1.2f);
+    drawLine( 0.10f, 2.38f,  1.10f, 2.52f, 1.2f);
+    drawLine( 0.10f, 2.34f,  1.10f, 2.34f, 1.2f);
+    drawLine( 0.10f, 2.30f,  1.10f, 2.16f, 1.2f);
 
-    // --- Front paws: two flat ovals ---
+    // Front paws (flat ovals with toe lines)
     glColor3f(0.88f, 0.46f, 0.10f);
     glPushMatrix();
     glScalef(1.0f, 0.40f, 1.0f);
     fillCircle(-0.32f, 0.0f, 0.34f);
     fillCircle( 0.32f, 0.0f, 0.34f);
     glPopMatrix();
-    // toe lines
     glColor3f(0.68f, 0.28f, 0.04f);
-    drawLine(-0.46f, 0.14f,  -0.18f, 0.14f,  1.0f);
-    drawLine( 0.18f, 0.14f,   0.46f, 0.14f,  1.0f);
+    drawLine(-0.46f, 0.14f, -0.18f, 0.14f, 1.0f);
+    drawLine( 0.18f, 0.14f,  0.46f, 0.14f, 1.0f);
 
     glPopMatrix();
 }
 
-// ============================================================================
-// DEER  (night only) – translated along forest-side bank baseline
-//
-//  Body/Head       → fillCircle (scaled ovals)
-//  Legs            → drawLine (GL_LINES, thick)
-//  Antlers         → drawLine (GL_LINES, medium)
-//  Belly patch     → fillCircle (cream/white)
-//  Tail            → fillCircle (white)
-//  Eyes/Nose       → fillCircle (small)
-//  TRANSFORM       → glTranslatef (translation along bank)
-// ============================================================================
+// =============================================================================
+// Deer  —  night only, walks along the forest river bank
+// =============================================================================
+
 void drawDeer() {
     if (timeState != NIGHT) return;
 
-    float baseY = forestBase(deerX);
     glPushMatrix();
-    glTranslatef(deerX, baseY, 0.0f);      // TRANSFORM: Translation
-    glScalef(deerDir, 1.0f, 1.0f);         // TRANSFORM: Mirror when moving left (deerDir = -1)
+    glTranslatef(deerX, forestBase(deerX), 0.0f);
+    glScalef(deerDir, 1.0f, 1.0f);   // flip horizontally when moving left
 
-    // --- Legs: four legs, slightly angled ---
+    // Legs (four lines with darker hoof tips)
     glColor3f(0.55f, 0.27f, 0.07f);
-    // back legs
     drawLine(-0.70f, 0.0f, -0.90f, -2.2f, 2.5f);
     drawLine(-0.30f, 0.0f, -0.40f, -2.2f, 2.5f);
-    // front legs
     drawLine( 0.30f, 0.0f,  0.40f, -2.2f, 2.5f);
     drawLine( 0.80f, 0.0f,  0.95f, -2.2f, 2.5f);
-    // hooves (darker tips)
     glColor3f(0.25f, 0.12f, 0.04f);
     drawLine(-0.90f, -2.2f, -0.90f, -2.6f, 2.5f);
     drawLine(-0.40f, -2.2f, -0.40f, -2.6f, 2.5f);
     drawLine( 0.40f, -2.2f,  0.40f, -2.6f, 2.5f);
     drawLine( 0.95f, -2.2f,  0.95f, -2.6f, 2.5f);
 
-    // --- Body: wide horizontal oval ---
+    // Body (wide horizontal oval)
     glColor3f(0.72f, 0.40f, 0.12f);
     glPushMatrix();
     glScalef(1.55f, 1.0f, 1.0f);
     fillCircle(0.0f, 0.85f, 1.10f);
     glPopMatrix();
 
-    // --- Belly/chest patch: lighter cream ---
+    // Belly / chest patch
     glColor3f(0.88f, 0.74f, 0.52f);
     glPushMatrix();
     glScalef(0.70f, 0.85f, 1.0f);
     fillCircle(0.18f, 0.90f, 0.75f);
     glPopMatrix();
 
-    // --- Neck: thick angled oval connecting body to head ---
+    // Neck
     glColor3f(0.72f, 0.40f, 0.12f);
     glPushMatrix();
     glTranslatef(0.85f, 1.55f, 0.0f);
@@ -823,15 +801,14 @@ void drawDeer() {
     fillCircle(0.0f, 0.0f, 0.65f);
     glPopMatrix();
 
-    // --- Head: rounded oval, slightly tilted forward ---
-    glColor3f(0.72f, 0.40f, 0.12f);
+    // Head
     glPushMatrix();
     glTranslatef(1.30f, 2.60f, 0.0f);
     glScalef(1.15f, 0.90f, 1.0f);
     fillCircle(0.0f, 0.0f, 0.62f);
     glPopMatrix();
 
-    // --- Snout: slightly lighter protruding muzzle ---
+    // Snout
     glColor3f(0.82f, 0.60f, 0.40f);
     glPushMatrix();
     glTranslatef(1.80f, 2.42f, 0.0f);
@@ -839,132 +816,102 @@ void drawDeer() {
     fillCircle(0.0f, 0.0f, 0.38f);
     glPopMatrix();
 
-    // --- Nose: dark oval at tip of snout ---
-    glColor3f(0.18f, 0.08f, 0.04f);
-    fillCircle(2.14f, 2.38f, 0.13f);
+    // Nose and eye
+    glColor3f(0.18f, 0.08f, 0.04f); fillCircle(2.14f, 2.38f, 0.13f);
+    glColor3f(0.10f, 0.06f, 0.02f); fillCircle(1.52f, 2.72f, 0.15f);
+    glColor3f(1.0f,  1.0f,  1.0f ); fillCircle(1.58f, 2.78f, 0.05f);
 
-    // --- Eye: dark with white shine ---
-    glColor3f(0.10f, 0.06f, 0.02f);
-    fillCircle(1.52f, 2.72f, 0.15f);
-    glColor3f(1.0f, 1.0f, 1.0f);
-    fillCircle(1.58f, 2.78f, 0.05f);
-
-    // --- Ear: rounded triangle shape ---
+    // Ear (outer brown, inner pink)
     glColor3f(0.72f, 0.40f, 0.12f);
     glBegin(GL_TRIANGLES);
-        glVertex2f(0.88f, 3.05f);
-        glVertex2f(0.70f, 3.85f);
-        glVertex2f(1.32f, 3.70f);
+        glVertex2f(0.88f, 3.05f); glVertex2f(0.70f, 3.85f); glVertex2f(1.32f, 3.70f);
     glEnd();
-    // inner ear (pink)
     glColor3f(0.88f, 0.58f, 0.58f);
     glBegin(GL_TRIANGLES);
-        glVertex2f(0.92f, 3.12f);
-        glVertex2f(0.78f, 3.68f);
-        glVertex2f(1.22f, 3.56f);
+        glVertex2f(0.92f, 3.12f); glVertex2f(0.78f, 3.68f); glVertex2f(1.22f, 3.56f);
     glEnd();
 
-    // --- White tail ---
+    // White tail
     glColor3f(0.95f, 0.92f, 0.85f);
     fillCircle(-1.60f, 1.20f, 0.32f);
 
-    // --- Antlers: branched lines from top of head ---
+    // Antlers (branched lines from top of head)
     glColor3f(0.40f, 0.22f, 0.06f);
-    // left antler base
-    drawLine(0.90f, 3.18f,  0.50f, 4.30f, 2.0f);
-    // left antler branch 1
-    drawLine(0.50f, 4.30f,  0.10f, 5.10f, 2.0f);
-    // left antler branch 2
-    drawLine(0.50f, 4.30f,  0.70f, 5.00f, 2.0f);
-    // left antler branch 3 (top tine)
-    drawLine(0.10f, 5.10f, -0.20f, 5.60f, 1.8f);
-    drawLine(0.10f, 5.10f,  0.30f, 5.55f, 1.8f);
-
-    // right antler base
-    drawLine(1.40f, 3.22f,  1.70f, 4.30f, 2.0f);
-    // right antler branch 1
-    drawLine(1.70f, 4.30f,  1.40f, 5.10f, 2.0f);
-    // right antler branch 2
-    drawLine(1.70f, 4.30f,  2.10f, 5.00f, 2.0f);
-    // right antler branch 3 (top tine)
-    drawLine(1.40f, 5.10f,  1.20f, 5.60f, 1.8f);
-    drawLine(1.40f, 5.10f,  1.70f, 5.55f, 1.8f);
+    drawLine( 0.90f, 3.18f,  0.50f, 4.30f, 2.0f);
+    drawLine( 0.50f, 4.30f,  0.10f, 5.10f, 2.0f);
+    drawLine( 0.50f, 4.30f,  0.70f, 5.00f, 2.0f);
+    drawLine( 0.10f, 5.10f, -0.20f, 5.60f, 1.8f);
+    drawLine( 0.10f, 5.10f,  0.30f, 5.55f, 1.8f);
+    drawLine( 1.40f, 3.22f,  1.70f, 4.30f, 2.0f);
+    drawLine( 1.70f, 4.30f,  1.40f, 5.10f, 2.0f);
+    drawLine( 1.70f, 4.30f,  2.10f, 5.00f, 2.0f);
+    drawLine( 1.40f, 5.10f,  1.20f, 5.60f, 1.8f);
+    drawLine( 1.40f, 5.10f,  1.70f, 5.55f, 1.8f);
 
     glPopMatrix();
 }
 
-// ============================================================================
-// VILLAGE
-// ============================================================================
+// =============================================================================
+// Village  —  lower-right triangle
+// =============================================================================
+
 void drawVillage() {
-
-    // Village ground
-    if (timeState == DAY)
-        glColor3f(0.28f, 0.68f, 0.18f);
-    else
-        glColor3f(0.10f, 0.30f, 0.08f);
-
+    // Ground
+    if (timeState == DAY) glColor3f(0.28f, 0.68f, 0.18f);
+    else                  glColor3f(0.10f, 0.30f, 0.08f);
     glBegin(GL_TRIANGLES);
-        glVertex2f( 40.0f,  5.0f);
+        glVertex2f( 40.0f,   5.0f);
         glVertex2f( 40.0f, -30.0f);
         glVertex2f(-40.0f, -30.0f);
     glEnd();
 
-    // Grass
-    if (timeState == DAY)
-        glColor3f(0.08f, 0.38f, 0.04f);
-    else
-        glColor3f(0.04f, 0.18f, 0.02f);
-
+    // Short grass (two blades per tuft)
+    if (timeState == DAY) glColor3f(0.08f, 0.38f, 0.04f);
+    else                  glColor3f(0.04f, 0.18f, 0.02f);
     glLineWidth(1.9f);
     glBegin(GL_LINES);
-    for (const auto& g : villageGrass) {
-        float x = g.x;
-        float y = g.y;
-        float h = g.h;
-        float s = g.spread;
-        float lean = g.lean;
-        glVertex2f(x, y); glVertex2f(x - s + lean, y + h * 0.95f);
-        glVertex2f(x, y); glVertex2f(x + s + lean, y + h * 0.95f);
+    for (int i = 0; i < VILLAGE_GRASS_COUNT; i++) {
+        float x = villageGrass[i].x,  y = villageGrass[i].y;
+        float h = villageGrass[i].h,  s = villageGrass[i].spread;
+        float l = villageGrass[i].lean;
+        glVertex2f(x, y); glVertex2f(x - s + l, y + h * 0.95f);
+        glVertex2f(x, y); glVertex2f(x + s + l, y + h * 0.95f);
     }
     glEnd();
     glLineWidth(1.0f);
 
-    // Clothesline setup: two poles + rope + hanging clothes.
-    float poleLeftX  = -8.5f;
-    float poleRightX =  3.5f;
-    float poleBaseY  = -27.8f;
-    float poleH      =  7.4f;
-
+    // Clothesline poles
+    float poleBaseY = -27.8f;
+    float poleH     =   7.4f;
     if (timeState == DAY) glColor3f(0.44f, 0.27f, 0.11f);
-    else                 glColor3f(0.27f, 0.18f, 0.08f);
-    fillRect(poleLeftX,  poleBaseY, 0.60f, poleH);
-    fillRect(poleRightX, poleBaseY, 0.60f, poleH);
+    else                  glColor3f(0.27f, 0.18f, 0.08f);
+    fillRect(-8.5f, poleBaseY, 0.60f, poleH);
+    fillRect( 3.5f, poleBaseY, 0.60f, poleH);
 
-    // Rope with a slight sag in the middle.
+    // Rope (slight sag from left pole to right)
     if (timeState == DAY) glColor3f(0.70f, 0.62f, 0.46f);
-    else                 glColor3f(0.44f, 0.40f, 0.30f);
-    drawLine(poleLeftX + 0.30f,  poleBaseY + poleH - 0.2f,
-             poleRightX + 0.30f, poleBaseY + poleH - 0.9f, 1.8f);
+    else                  glColor3f(0.44f, 0.40f, 0.30f);
+    drawLine(-8.2f, poleBaseY + poleH - 0.2f,
+              3.8f, poleBaseY + poleH - 0.9f, 1.8f);
 
-    // Hanging cloth pieces.
+    // Hanging clothes (4 pieces)
     if (timeState == DAY) glColor3f(0.72f, 0.25f, 0.22f);
-    else                 glColor3f(0.48f, 0.16f, 0.16f);
+    else                  glColor3f(0.48f, 0.16f, 0.16f);
     fillRect(-7.1f, -23.05f, 1.7f, 2.4f);
 
     if (timeState == DAY) glColor3f(0.24f, 0.50f, 0.72f);
-    else                 glColor3f(0.15f, 0.29f, 0.42f);
+    else                  glColor3f(0.15f, 0.29f, 0.42f);
     fillRect(-4.7f, -23.50f, 1.8f, 2.7f);
 
     if (timeState == DAY) glColor3f(0.86f, 0.78f, 0.62f);
-    else                 glColor3f(0.58f, 0.52f, 0.42f);
+    else                  glColor3f(0.58f, 0.52f, 0.42f);
     fillRect(-2.2f, -23.15f, 1.5f, 2.2f);
 
     if (timeState == DAY) glColor3f(0.66f, 0.34f, 0.62f);
-    else                 glColor3f(0.40f, 0.22f, 0.36f);
-    fillRect(0.1f, -23.60f, 1.6f, 2.5f);
+    else                  glColor3f(0.40f, 0.22f, 0.36f);
+    fillRect( 0.1f, -23.60f, 1.6f, 2.5f);
 
-    // Cloth clips/pegs for small details.
+    // Clothes pegs
     glColor3f(0.24f, 0.14f, 0.07f);
     fillRect(-6.9f, -20.94f, 0.16f, 0.28f);
     fillRect(-5.7f, -20.96f, 0.16f, 0.28f);
@@ -972,10 +919,10 @@ void drawVillage() {
     fillRect(-3.3f, -21.07f, 0.16f, 0.28f);
     fillRect(-2.0f, -21.20f, 0.16f, 0.28f);
     fillRect(-0.9f, -21.22f, 0.16f, 0.28f);
-    fillRect(0.3f,  -21.35f, 0.16f, 0.28f);
-    fillRect(1.4f,  -21.37f, 0.16f, 0.28f);
+    fillRect( 0.3f, -21.35f, 0.16f, 0.28f);
+    fillRect( 1.4f, -21.37f, 0.16f, 0.28f);
 
-    // House 1
+    // House 1 (walls + roof triangle + door + window)
     glColor3f(0.42f, 0.23f, 0.09f);
     fillRect(8.0f, -28.0f, 13.0f, 11.0f);
 
@@ -989,13 +936,11 @@ void drawVillage() {
     glColor3f(0.18f, 0.09f, 0.03f);
     fillRect(12.5f, -28.0f, 3.5f, 5.0f);
 
-    if (timeState == DAY)
-        glColor3f(0.82f, 0.76f, 0.58f);
-    else
-        glColor3f(0.95f, 0.85f, 0.30f);
+    if (timeState == DAY) glColor3f(0.82f, 0.76f, 0.58f);
+    else                  glColor3f(0.95f, 0.85f, 0.30f);  // glowing yellow at night
     fillRect(9.5f, -22.0f, 2.5f, 2.5f);
 
-    // House 2
+    // House 2 (smaller, top-right corner)
     glColor3f(0.55f, 0.28f, 0.10f);
     fillRect(34.0f, -12.0f, 5.0f, 6.0f);
 
@@ -1006,16 +951,14 @@ void drawVillage() {
         glVertex2f(40.0f, -6.0f);
     glEnd();
 
-    if (timeState == DAY)
-        glColor3f(0.82f, 0.76f, 0.58f);
-    else
-        glColor3f(0.95f, 0.85f, 0.30f);
+    if (timeState == DAY) glColor3f(0.82f, 0.76f, 0.58f);
+    else                  glColor3f(0.95f, 0.85f, 0.30f);
     fillRect(34.5f, -10.0f, 1.8f, 1.8f);
 
     glColor3f(0.18f, 0.09f, 0.03f);
     fillRect(37.0f, -12.0f, 1.6f, 3.2f);
 
-    // Windmill body
+    // Windmill body (tapered tower)
     glColor3f(0.52f, 0.38f, 0.22f);
     glBegin(GL_QUADS);
         glVertex2f(25.5f, -27.0f);
@@ -1025,44 +968,32 @@ void drawVillage() {
     glEnd();
 
     glColor3f(0.25f, 0.14f, 0.05f);
-    fillRect(28.5f, -27.0f, 3.0f, 5.0f);
+    fillRect(28.5f, -27.0f, 3.0f, 5.0f);  // door
 
-    if (timeState == DAY)
-        glColor3f(0.78f, 0.72f, 0.55f);
-    else
-        glColor3f(0.95f, 0.85f, 0.30f);
-    fillRect(28.8f, -16.0f, 2.4f, 2.4f);
+    if (timeState == DAY) glColor3f(0.78f, 0.72f, 0.55f);
+    else                  glColor3f(0.95f, 0.85f, 0.30f);
+    fillRect(28.8f, -16.0f, 2.4f, 2.4f);  // window
 
-    // Windmill blades
+    // Windmill blades — rotate around the pivot point using glRotatef
     float pivotX = 30.0f;
     float pivotY = -8.0f;
-
     glPushMatrix();
-        glTranslatef(pivotX, pivotY, 0.0f);
-        glRotatef(windmillAngle, 0.0f, 0.0f, 1.0f);
-
+        glTranslatef(pivotX, pivotY, 0.0f);           // move origin to pivot
+        glRotatef(windmillAngle, 0.0f, 0.0f, 1.0f);  // rotate blades
         glColor3f(0.82f, 0.79f, 0.68f);
-        float bw = 0.55f;
-        float bl = 4.5f;
-
-        fillRect(-bl, -bw, bl * 2.0f, bw * 2.0f);
-        fillRect(-bw, -bl, bw * 2.0f, bl * 2.0f);
+        fillRect(-4.5f, -0.55f, 9.0f, 1.1f);    // horizontal blade
+        fillRect(-0.55f, -4.5f, 1.1f, 9.0f);    // vertical blade
     glPopMatrix();
 
+    // Pivot hub circle
     glColor3f(0.38f, 0.22f, 0.08f);
     fillCircle(pivotX, pivotY, 0.7f);
 }
 
-// ============================================================================
-// BIRDS  [Person 1 -- owns this]
-//
-// Three birds drawn as V-shapes using GL_LINE_STRIP, visible day only.
-// Each bird is a left-wing tip -> centre -> right-wing tip polyline.
-//
-// TRANSFORM: Translation -- birdX[] increments every frame in timer().
-//            When a bird drifts past the right edge it resets off the
-//            left edge so it loops continuously across the sky.
-// ============================================================================
+// =============================================================================
+// Birds  —  day only, fly left to right across the sky
+// =============================================================================
+
 void drawBirds() {
     if (timeState != DAY) return;
 
@@ -1072,16 +1003,11 @@ void drawBirds() {
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
     for (int i = 0; i < 3; i++) {
-        float bx = birdX[i];
-        float by = birdY[i];
-        float ws = 1.3f;   // half wing-span
-        float wh = 0.5f;   // wing dip height
-
-        // V-shape: left tip -> body centre -> right tip
+        // Each bird is a simple V-shape: left tip → centre → right tip
         glBegin(GL_LINE_STRIP);
-            glVertex2f(bx - ws, by + wh);   // left wing tip
-            glVertex2f(bx,      by);         // centre (body)
-            glVertex2f(bx + ws, by + wh);   // right wing tip
+            glVertex2f(birdX[i] - 1.3f, birdY[i] + 0.5f);  // left wing tip
+            glVertex2f(birdX[i],        birdY[i]        );  // body centre
+            glVertex2f(birdX[i] + 1.3f, birdY[i] + 0.5f);  // right wing tip
         glEnd();
     }
 
@@ -1089,48 +1015,60 @@ void drawBirds() {
     glLineWidth(1.0f);
 }
 
-// ============================================================================
-// Timer – animates cat back and forth (day only)
-//        animates deer back and forth (night only)
-// ============================================================================
-void timer(int /*value*/) {
+// =============================================================================
+// Timer  —  called every ~16ms, updates all animation state
+// =============================================================================
+
+void timer(int value) {
+    // Windmill rotates continuously
     windmillAngle += 1.2f;
     if (windmillAngle >= 360.0f) windmillAngle -= 360.0f;
 
-    // Fireflies drift (night only) — constrained by side-specific zones.
+    // Clouds drift across the sky (day only)
+    if (timeState == DAY) {
+        for (int i = 0; i < 4; i++) {
+            cloudOffset[i] += CLOUD_SPEED[i];
+            if (cloudOffset[i] > 90.0f) cloudOffset[i] = 0.0f;
+        }
+    }
+
+    // Fireflies drift randomly within their zones (night only)
     if (timeState == NIGHT) {
         for (int i = 0; i < FIREFLY_COUNT; i++) {
-            float dx = (frand01() * 2.0f - 1.0f) * 0.10f; // ~1–2 pixels in this world scale
+            float dx = (frand01() * 2.0f - 1.0f) * 0.10f;
             float dy = (frand01() * 2.0f - 1.0f) * 0.10f;
             if (i < FIREFLY_VILLAGE_COUNT) {
                 fireflyX[i] = clampf(fireflyX[i] + dx, FIREFLY_VILLAGE_X_MIN, FIREFLY_VILLAGE_X_MAX);
                 fireflyY[i] = clampf(fireflyY[i] + dy, FIREFLY_VILLAGE_Y_MIN, FIREFLY_VILLAGE_Y_MAX);
             } else {
-                float nx = clampf(fireflyX[i] + dx, FIREFLY_FOREST_X_MIN, FIREFLY_FOREST_X_MAX);
-                float ny = fireflyY[i] + dy;
-                float minY = fireflyForestBankY(nx) + 0.8f;
+                float nx   = clampf(fireflyX[i] + dx, FIREFLY_FOREST_X_MIN, FIREFLY_FOREST_X_MAX);
+                float minY = riverUpperBankY(nx) + 0.8f;
                 if (minY < FOREST_Y_MIN) minY = FOREST_Y_MIN;
                 fireflyX[i] = nx;
-                fireflyY[i] = clampf(ny, minY, FOREST_Y_MAX);
+                fireflyY[i] = clampf(fireflyY[i] + dy, minY, FOREST_Y_MAX);
             }
         }
     }
 
+    // Cat ping-pong translation (day only)
     if (timeState == DAY) {
         catX += catDir * CAT_SPEED;
         if (catX > CAT_X_MAX) { catX = CAT_X_MAX; catDir = -1.0f; }
         if (catX < CAT_X_MIN) { catX = CAT_X_MIN; catDir =  1.0f; }
-    } else {
+    }
+
+    // Deer ping-pong translation (night only)
+    if (timeState == NIGHT) {
         deerX += deerDir * DEER_SPEED;
         if (deerX > DEER_X_MAX) { deerX = DEER_X_MAX; deerDir = -1.0f; }
         if (deerX < DEER_X_MIN) { deerX = DEER_X_MIN; deerDir =  1.0f; }
     }
-    // TRANSFORM: Translation -- move birds left to right (Person 1)
+
+    // Bird translation — moves right, resets off-screen to the left when it exits
     if (timeState == DAY) {
         for (int i = 0; i < 3; i++) {
             birdX[i] += BIRD_SPEED;
-            if (birdX[i] > 45.0f)    // flew off right edge
-                birdX[i] = -50.0f;   // reset off-screen to the left
+            if (birdX[i] > 45.0f) birdX[i] = -50.0f;
         }
     }
 
@@ -1138,34 +1076,36 @@ void timer(int /*value*/) {
     glutTimerFunc(16, timer, 0);
 }
 
-// ============================================================================
-// Display
-// ============================================================================
+// =============================================================================
+// Display  —  calls every draw function in the correct order
+// =============================================================================
+
 void display() {
-    drawSky();
+    drawSky();        // background (must be first)
     drawSun();
     drawMoon();
-    drawBirds();       // Draw after sun/moon so birds appear in front
-    drawForest();
+    drawBirds();      // in front of sky, behind everything else
+    drawForest();     // drawn before river so river sits on top
     drawRiver();
     drawVillage();
     drawFence();
     drawCat();
     drawDeer();
-    drawFireflies();
+    drawFireflies();  // drawn last so they appear on top
     glutSwapBuffers();
 }
 
-// ============================================================================
-// Keyboard
-// ============================================================================
-void keyboard(unsigned char key, int /*x*/, int /*y*/) {
+// =============================================================================
+// Keyboard Handler
+// =============================================================================
+
+void keyboard(unsigned char key, int x, int y) {
     switch (key) {
         case ' ':
             timeState = (timeState == DAY) ? NIGHT : DAY;
             glutPostRedisplay();
             break;
-        case 27:
+        case 27:   // ESC
         case 'q':
         case 'Q':
             exit(0);
@@ -1173,9 +1113,10 @@ void keyboard(unsigned char key, int /*x*/, int /*y*/) {
     }
 }
 
-// ============================================================================
+// =============================================================================
 // Init & Main
-// ============================================================================
+// =============================================================================
+
 void init() {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -1183,9 +1124,10 @@ void init() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    srand(1337);
+    srand(1337);   // fixed seed so grass/firefly positions are the same every run
     initGrass();
     initFireflies();
+    initStars();
 }
 
 int main(int argc, char** argv) {
@@ -1193,7 +1135,7 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(1200, 900);
     glutInitWindowPosition(100, 100);
-    glutCreateWindow("Zero Point - Forest Meets Village");
+    glutCreateWindow("Zero Point — Forest Meets Village");
 
     init();
     glutDisplayFunc(display);
@@ -1202,3 +1144,4 @@ int main(int argc, char** argv) {
     glutMainLoop();
     return 0;
 }
+
