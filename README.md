@@ -1,42 +1,79 @@
 # Zero Point
 
-**Where Forest Meets Village — A 2D OpenGL Environmental Simulation**
+**Where Forest Meets Village — a 2D OpenGL environmental simulation**
 
-A scene split into two worlds — a dense forest and a quiet village — divided by a diagonal river. The environment automatically cycles between day and night, each revealing different elements and animals.
+`Zero Point` renders a split world: a dense forest in the upper-left, a quiet village in the lower-right, and a diagonal river between them. The world transitions between day and night, changing lighting, color palette, and active wildlife.
 
-## Scene
+## Scene Overview
 
-| Zone | Contents |
+| Zone | Elements |
 |------|----------|
-| Sky | Sun / moon, drifting clouds, stars, birds |
-| Forest (upper-left) | Trees, tall grass, deer at night, fireflies |
-| Village (lower-right) | Houses, windmill, clothesline, fence, cat |
-| River (diagonal) | Animated flow streaks, muddy banks |
+| Sky | Sun/moon, drifting clouds, stars, birds |
+| Forest (upper-left) | Trees, layered grass, deer (night), fireflies (night) |
+| Village (lower-right) | Houses, windmill, clothesline, fence, cat (day) |
+| River (diagonal) | Bresenham banks, animated flow streaks |
 
 ## Controls
 
 | Key | Action |
 |-----|--------|
-| `Space` | Toggle day / night |
-| `ESC` / `q` | Quit |
+| `Space` | Toggle day/night |
+| `Esc` / `q` / `Q` | Quit |
 
-The scene also auto-toggles every ~8 seconds.
+Auto cycle: day/night toggles about every **10 seconds**.
 
 ## Features
 
-- Day/night cycle with distinct lighting, colors, and active elements
-- Animated cat (day), deer (night), birds (day), windmill, fireflies (night), and clouds
-- Line drawing algorithms: **Bresenham** (river edges), **DDA** (fence), **Midpoint Circle** (sun/moon)
-- 2D transformations: translation, rotation, and scaling
+- Day/night rendering with different tones and active entities
+- Smooth animation loop (~16 ms timer) for clouds, birds, windmill, cat, deer, and fireflies
+- Classic graphics algorithms:
+  - Bresenham line drawing (river banks)
+  - DDA line drawing (fence)
+  - Midpoint circle (sun/moon)
+- 2D transformation use cases: translation, rotation, and scaling
 
-## Build
+## Build and Run
 
-Requires **OpenGL** and **FreeGLUT**.
+### Prerequisites
+
+- CMake 3.10+
+- C++20 compiler
+- OpenGL
+- GLUT/FreeGLUT
+
+### Linux (FreeGLUT)
+
+Install dependencies (Debian/Ubuntu example):
 
 ```sh
-cmake -B build && cmake --build build
+sudo apt install build-essential cmake freeglut3-dev
+```
+
+Build and run:
+
+```sh
+cmake -B build
+cmake --build build
 ./build/ZeroPoint
 ```
 
-> On Linux, install dependencies with:
-> `sudo apt install freeglut3-dev` or equivalent for your distro.
+### macOS
+
+Install dependencies (Homebrew example):
+
+```sh
+brew install cmake freeglut
+```
+
+Then build and run with the same commands above.
+
+### Windows
+
+Use Visual Studio (or another CMake-capable toolchain) with OpenGL + GLUT available in your environment, then:
+
+```sh
+cmake -B build
+cmake --build build --config Release
+```
+
+Run the produced `ZeroPoint` executable from the `build` output directory.
