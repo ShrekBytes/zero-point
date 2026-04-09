@@ -234,7 +234,9 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
     float dx = x2 - x1;
     float dy = y2 - y1;
 
-    int steps = (int)(fabs(dx) > fabs(dy) ? fabs(dx) : fabs(dy));
+    // In world-space coordinates, 1 unit can be visually large.
+    // Use denser sampling so DDA point lines appear continuous.
+    int steps = (int)ceilf((fabs(dx) > fabs(dy) ? fabs(dx) : fabs(dy)) * 7.0f);
     if (steps == 0) {
         glBegin(GL_POINTS);
         glVertex2f(x1, y1);
@@ -248,7 +250,7 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
 
     glBegin(GL_POINTS);
     for (int i = 0; i <= steps; i++) {
-        glVertex2f(roundf(x), roundf(y));
+        glVertex2f(x, y);
         x += xInc;
         y += yInc;
     }
@@ -482,12 +484,10 @@ void drawRiver() {
 
     // Bank outlines drawn with Bresenham (required algorithm)
     glColor3f(0.36f, 0.24f, 0.11f);
-    glLineWidth(1.35f);
-    glBegin(GL_LINES);
-        glVertex2f( 40.0f, 10.0f); glVertex2f(-40.0f, -20.0f);
-        glVertex2f( 40.0f,  5.0f); glVertex2f(-40.0f, -30.0f);
-    glEnd();
-    glLineWidth(1.0f);
+    glPointSize(2.0f);
+    drawLineBresenham( 40,  10, -40, -20);
+    drawLineBresenham( 40,   5, -40, -30);
+    glPointSize(1.0f);
 }
 
 // =============================================================================
@@ -915,10 +915,13 @@ void drawVillage() {
     fillRect( 3.5f, poleBaseY, 0.60f, poleH);
 
     // Rope (slight sag from left pole to right)
-    if (timeState == DAY) glColor3f(0.70f, 0.62f, 0.46f);
-    else                  glColor3f(0.44f, 0.40f, 0.30f);
-    drawLine(-8.2f, poleBaseY + poleH - 0.2f,
-              3.8f, poleBaseY + poleH - 0.9f, 1.8f);
+    // Use DDA here so the algorithm is visibly demonstrated on-screen.
+    glPointSize(2.0f);
+    if (timeState == DAY) glColor3f(0.78f, 0.70f, 0.52f);
+    else                  glColor3f(0.38f, 0.33f, 0.24f);
+    drawLineDDA(-8.2f, poleBaseY + poleH - 0.45f,
+                 3.8f, poleBaseY + poleH - 1.15f);
+    glPointSize(1.0f);
 
     // Hanging clothes (4 pieces)
     if (timeState == DAY) glColor3f(0.72f, 0.25f, 0.22f);
