@@ -27,6 +27,7 @@ const float WORLD_TOP    =  30.0f;
 // =============================================================================
 
 float windmillAngle = 0.0f;
+float globalAnimTime = 0.0f;
 
 // Auto day/night cycle — toggles every ~10 seconds (625 ticks × 16 ms ≈ 10 s)
 int dayNightCounter = 0;
@@ -46,19 +47,47 @@ const float DEER_SPEED = 0.03f;
 const float DEER_X_MIN = -18.0f;
 const float DEER_X_MAX =  8.0f;
 
-// Three birds fly across the sky (day only)
-float birdX[3] = { -45.0f, -55.0f, -62.0f };
-float birdY[3] = {  22.0f,  18.5f,  25.0f };
+// Birds fly across the sky (day only)
+const int BIRD_COUNT = 7;
+float birdX[BIRD_COUNT] = { -45.0f, -55.0f, -62.0f, -70.0f, -78.0f, -85.0f, -92.0f };
+float birdY[BIRD_COUNT] = {  22.0f,  18.5f,  25.0f,  15.0f,  23.0f,  19.5f,  21.0f };
 const float BIRD_SPEED = 0.035f;
 
-// Four clouds drift across the sky at different speeds (day only)
-float cloudOffset[4]      = { 0.0f, 0.0f, 0.0f, 0.0f };
-const float CLOUD_SPEED[4] = { 0.01f, 0.03f, 0.005f, 0.02f };
+// Clouds drift across the sky at different speeds (day only)
+const int CLOUD_COUNT = 7;
+float cloudOffset[CLOUD_COUNT]      = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+const float CLOUD_SPEED[CLOUD_COUNT] = { 0.01f, 0.03f, 0.005f, 0.02f, 0.015f, 0.025f, 0.012f };
 
 // Stars are only visible at night
-const int STAR_COUNT = 60;
+const int STAR_COUNT = 80;
 float starX[STAR_COUNT];
 float starY[STAR_COUNT];
+float starPhase[STAR_COUNT];
+
+// =============================================================================
+// New Details State (Smoke, Ripples, Flowers, Rocks, Leaves, Shooting Star)
+// =============================================================================
+
+struct SmokeParticle { float x, y, size, alpha; bool active; };
+const int SMOKE_COUNT = 30;
+SmokeParticle smokeParticles[SMOKE_COUNT];
+
+struct Ripple { float x, y, radius, maxRadius, alpha; bool active; };
+const int RIPPLE_COUNT = 8;
+Ripple ripples[RIPPLE_COUNT];
+
+struct StaticProp { float x, y; int type; };
+const int FLOWER_COUNT = 40;
+StaticProp flowers[FLOWER_COUNT];
+const int ROCK_COUNT = 15;
+StaticProp rocks[ROCK_COUNT];
+
+struct Leaf { float x, y, drift, alpha; bool active; };
+const int LEAF_COUNT = 25;
+Leaf leaves[LEAF_COUNT];
+
+struct ShootingStar { float x, y, len, alpha; bool active; };
+ShootingStar shootingStar = {0,0,0,0,false};
 
 // =============================================================================
 // Grass & Firefly Data
@@ -72,11 +101,11 @@ struct GrassTuft {
     float lean;       // slight horizontal lean
 };
 
-const int FOREST_BANK_GRASS_COUNT  = 42;
-const int FOREST_PATCH_GRASS_COUNT = 84;
-const int VILLAGE_GRASS_COUNT      = 74;
-const int FIREFLY_COUNT            = 28;
-const int FIREFLY_VILLAGE_COUNT    = 2;   // most fireflies stay in the forest
+const int FOREST_BANK_GRASS_COUNT  = 60;
+const int FOREST_PATCH_GRASS_COUNT = 120;
+const int VILLAGE_GRASS_COUNT      = 80;
+const int FIREFLY_COUNT            = 70;
+const int FIREFLY_VILLAGE_COUNT    = 10;   // fireflies in both forest and village
 
 GrassTuft forestBankGrass[FOREST_BANK_GRASS_COUNT];
 GrassTuft forestPatchGrass[FOREST_PATCH_GRASS_COUNT];
@@ -141,6 +170,21 @@ void initStars() {
     for (int i = 0; i < STAR_COUNT; i++) {
         starX[i] = -40.0f + frand01() * 80.0f;
         starY[i] =   6.0f + frand01() * 24.0f;
+        starPhase[i] = frand01() * 2.0f * M_PI;
+    }
+}
+
+void initDetails() {
+    for (int i = 0; i < SMOKE_COUNT; i++) smokeParticles[i].active = false;
+    for (int i = 0; i < RIPPLE_COUNT; i++) ripples[i].active = false;
+    for (int i = 0; i < LEAF_COUNT; i++) leaves[i].active = false;
+    shootingStar.active = false;
+
+    for (int i = 0; i < ROCK_COUNT; i++) {
+        rocks[i].x = -38.0f + frand01() * 76.0f;
+        if (i % 2 == 0) rocks[i].y = riverUpperBankY(rocks[i].x) + 0.1f + frand01() * 1.5f;
+        else            rocks[i].y = riverLowerBankY(rocks[i].x) - 0.1f - frand01() * 1.5f;
+        rocks[i].type = rand() % 2;
     }
 }
 
@@ -364,58 +408,132 @@ void drawLine(float x1, float y1, float x2, float y2, float width = 1.0f) {
 // =============================================================================
 
 void drawSky() {
-    if (timeState == DAY) glClearColor(0.53f, 0.81f, 0.92f, 1.0f);  // light blue
-    else                  glClearColor(0.04f, 0.10f, 0.16f, 1.0f);  // dark navy
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    glBegin(GL_QUADS);
     if (timeState == DAY) {
-        // Four clouds drifting right to left at different speeds
-        glColor3f(1.0f, 1.0f, 1.0f);
-
-        float c1 = 45.0f - fmodf(28.0f + cloudOffset[0], 90.0f);
-        fillMidpointCircle(c1,        24.0f, 3.0f);
-        fillMidpointCircle(c1 + 3.5f, 25.0f, 4.0f);
-        fillMidpointCircle(c1 + 7.0f, 24.0f, 3.0f);
-
-        float c2 = 45.0f - fmodf(10.0f + cloudOffset[1], 90.0f);
-        fillMidpointCircle(c2,        26.0f, 3.5f);
-        fillMidpointCircle(c2 + 4.0f, 27.0f, 4.5f);
-        fillMidpointCircle(c2 + 8.0f, 26.0f, 3.5f);
-
-        float c3 = 45.0f - fmodf(65.0f + cloudOffset[2], 90.0f);
-        fillMidpointCircle(c3,        22.0f, 2.5f);
-        fillMidpointCircle(c3 + 3.0f, 23.0f, 3.0f);
-        fillMidpointCircle(c3 + 6.0f, 22.0f, 2.5f);
-
-        float c4 = 45.0f - fmodf(45.0f + cloudOffset[3], 90.0f);
-        fillMidpointCircle(c4,        25.0f, 3.0f);
-        fillMidpointCircle(c4 + 3.5f, 26.0f, 3.5f);
-        fillMidpointCircle(c4 + 7.0f, 25.0f, 3.0f);
+        glColor3f(0.25f, 0.55f, 0.95f);
+        glVertex2f(-40.0f,  30.0f);
+        glVertex2f( 40.0f,  30.0f);
+        glColor3f(0.85f, 0.95f, 1.00f);
+        glVertex2f( 40.0f, -30.0f);
+        glVertex2f(-40.0f, -30.0f);
     } else {
-        // Stars rendered as bright points across the upper sky
-        glColor3f(0.95f, 0.95f, 0.85f);
+        glColor3f(0.00f, 0.01f, 0.05f);
+        glVertex2f(-40.0f,  30.0f);
+        glVertex2f( 40.0f,  30.0f);
+        glColor3f(0.08f, 0.15f, 0.35f);
+        glVertex2f( 40.0f, -30.0f);
+        glVertex2f(-40.0f, -30.0f);
+    }
+    glEnd();
+
+    if (timeState == NIGHT) {
+        // Stars Twinkling (Pronounced blinking)
         glPointSize(2.5f);
         glBegin(GL_POINTS);
-        for (int i = 0; i < STAR_COUNT; i++)
+        for (int i = 0; i < STAR_COUNT; i++) {
+            // Faster oscillation and deeper dimming for a more noticeable blink
+            float twinkle = (sinf(globalAnimTime * 5.0f + starPhase[i] * 10.0f) + 1.0f) * 0.5f;
+            float brightness = 0.25f + 0.75f * twinkle; 
+            glColor3f(brightness, brightness, brightness * 0.9f);
             glVertex2f(starX[i], starY[i]);
+        }
         glEnd();
         glPointSize(1.0f);
+        
+        // Shooting star
+        if (shootingStar.active) {
+            glLineWidth(2.5f);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBegin(GL_LINES);
+            glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
+            glVertex2f(shootingStar.x + shootingStar.len, shootingStar.y + shootingStar.len);
+            glColor4f(1.0f, 1.0f, 1.0f, shootingStar.alpha);
+            glVertex2f(shootingStar.x, shootingStar.y);
+            glEnd();
+            glDisable(GL_BLEND);
+            glLineWidth(1.0f);
+        }
     }
+}
+
+void drawClouds() {
+    if (timeState != DAY) return;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    float c1 = 45.0f - fmodf(28.0f + cloudOffset[0], 90.0f);
+    fillMidpointCircle(c1,        24.0f, 3.0f);
+    fillMidpointCircle(c1 + 3.5f, 25.0f, 4.0f);
+    fillMidpointCircle(c1 + 7.0f, 24.0f, 3.0f);
+
+    float c2 = 45.0f - fmodf(10.0f + cloudOffset[1], 90.0f);
+    fillMidpointCircle(c2,        26.0f, 3.5f);
+    fillMidpointCircle(c2 + 4.0f, 27.0f, 4.5f);
+    fillMidpointCircle(c2 + 8.0f, 26.0f, 3.5f);
+
+    float c3 = 45.0f - fmodf(65.0f + cloudOffset[2], 90.0f);
+    fillMidpointCircle(c3,        22.0f, 2.5f);
+    fillMidpointCircle(c3 + 3.0f, 23.0f, 3.0f);
+    fillMidpointCircle(c3 + 6.0f, 22.0f, 2.5f);
+
+    float c4 = 45.0f - fmodf(45.0f + cloudOffset[3], 90.0f);
+    fillMidpointCircle(c4,        27.5f, 3.2f);
+    fillMidpointCircle(c4 + 4.0f, 28.2f, 4.2f);
+    fillMidpointCircle(c4 + 8.0f, 27.5f, 3.2f);
+
+    float c5 = 45.0f - fmodf(80.0f + cloudOffset[4], 90.0f);
+    fillMidpointCircle(c5,        20.0f, 2.8f);
+    fillMidpointCircle(c5 + 3.5f, 21.0f, 3.8f);
+    fillMidpointCircle(c5 + 7.0f, 20.0f, 2.8f);
+
+    float c6 = 45.0f - fmodf(20.0f + cloudOffset[5], 90.0f);
+    fillMidpointCircle(c6,        25.0f, 2.4f);
+    fillMidpointCircle(c6 + 3.0f, 26.0f, 3.4f);
+    fillMidpointCircle(c6 + 6.0f, 25.0f, 2.4f);
+
+    float c7 = 45.0f - fmodf(55.0f + cloudOffset[6], 90.0f);
+    fillMidpointCircle(c7,        21.5f, 3.0f);
+    fillMidpointCircle(c7 + 4.2f, 22.8f, 4.0f);
+    fillMidpointCircle(c7 + 8.4f, 21.5f, 3.0f);
+    glDisable(GL_BLEND);
 }
 
 void drawSun() {
     if (timeState != DAY) return;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 0.95f, 0.4f, 0.2f);
+    fillCircle(25.0f, 20.0f, 6.0f);
+    glColor4f(1.0f, 0.98f, 0.7f, 0.4f);
+    fillCircle(25.0f, 20.0f, 4.8f);
+    glDisable(GL_BLEND);
+    
     glColor3f(1.0f, 0.95f, 0.0f);
-    fillMidpointCircle(25.0f, 20.0f, 4.0f);
+    fillCircle(25.0f, 20.0f, 4.0f);
 }
 
 void drawMoon() {
     if (timeState != NIGHT) return;
-    // Full circle, then mask off a portion to create a crescent shape
-    glColor3f(0.94f, 0.94f, 0.82f);
-    fillMidpointCircle(-25.0f, 20.0f, 4.0f);
-    glColor3f(0.04f, 0.10f, 0.16f);   // same colour as sky to cut out the crescent
-    fillMidpointCircle(-23.5f, 21.0f, 3.5f);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.85f, 0.90f, 0.95f, 0.2f);
+    fillCircle(-25.0f, 20.0f, 5.8f);
+    glColor4f(0.95f, 0.95f, 1.00f, 0.4f);
+    fillCircle(-25.0f, 20.0f, 4.6f);
+    glDisable(GL_BLEND);
+
+    glColor3f(0.98f, 0.98f, 0.92f);
+    fillCircle(-25.0f, 20.0f, 4.0f); 
+    
+    glColor3f(0.85f, 0.85f, 0.80f);
+    fillCircle(-24.0f, 21.0f, 0.8f);
+    fillCircle(-26.5f, 19.5f, 1.2f);
+    fillCircle(-24.5f, 18.0f, 0.6f);
 }
 
 // =============================================================================
@@ -488,6 +606,74 @@ void drawRiver() {
     drawLineBresenham( 40,  10, -40, -20);
     drawLineBresenham( 40,   5, -40, -30);
     glPointSize(1.0f);
+
+    // Water reflections (Refined shimmering pillar)
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    float tx = (timeState == DAY) ? 25.0f : -25.0f;
+    float r, g, b, baseAlpha;
+    if (timeState == DAY) { r = 1.0f; g = 0.95f; b = 0.5f; baseAlpha = 0.45f; glLineWidth(2.5f); }
+    else                  { r = 0.85f; g = 0.95f; b = 1.0f; baseAlpha = 0.20f; glLineWidth(1.6f); }
+    
+    float yBot = riverLowerBankY(tx);
+    float yTop = riverUpperBankY(tx);
+    float yMid = (yBot + yTop) * 0.5f;
+    float yR   = (yTop - yBot) * 0.48f;
+    float step = (timeState == DAY) ? 0.35f : 0.25f; // denser lines at night to prevent "sticks"
+    
+    glBegin(GL_LINES);
+    for (float ly = yMid - yR; ly <= yMid + yR; ly += step) {
+        float f = fabsf(ly - yMid) / yR;
+        float a = (1.0f - f) * baseAlpha;
+        glColor4f(r, g, b, a);
+        float wMult = (timeState == DAY) ? 3.2f : 1.8f;
+        float wBase = (timeState == DAY) ? 1.0f : 0.6f;
+        float wSin  = (timeState == DAY) ? 1.8f : 1.0f;
+        float w = (1.0f - f) * wMult + wBase + sinf(ly * 32.0f) * wSin;
+        if (w < 0.1f) w = 0.1f;
+        glVertex2f(tx - w, ly);
+        glVertex2f(tx + w, ly);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+    glDisable(GL_BLEND);
+
+    // Ripples
+    glEnable(GL_LINE_SMOOTH);
+    glLineWidth(2.5f);
+    for (int i=0; i<RIPPLE_COUNT; i++) {
+        if (ripples[i].active) {
+            float alpha = ripples[i].alpha;
+            if (timeState == DAY) glColor4f(0.75f, 0.95f, 1.0f, alpha);
+            else                  glColor4f(0.4f, 0.6f, 0.8f, alpha * 0.7f);
+            glBegin(GL_LINE_LOOP);
+            float rx = ripples[i].radius;
+            float ry = rx * 0.35f;
+            for (int k = 0; k < 30; k++) {
+                float a = 2.0f * M_PI * k / 30.0f;
+                glVertex2f(ripples[i].x + rx * cosf(a), ripples[i].y + ry * sinf(a));
+            }
+            glEnd();
+        }
+    }
+    glDisable(GL_LINE_SMOOTH);
+    glLineWidth(1.0f);
+    glDisable(GL_BLEND);
+
+    // Rocks scattered on river banks
+    for (int i=0; i<ROCK_COUNT; i++) {
+        if (timeState == DAY) glColor3f(0.5f, 0.5f, 0.5f);
+        else                  glColor3f(0.2f, 0.25f, 0.3f);
+        float r = (rocks[i].type == 0) ? 0.3f : 0.45f;
+        glPushMatrix();
+        glTranslatef(rocks[i].x, rocks[i].y, 0.0f);
+        glScalef(1.0f, 0.6f, 1.0f);
+        fillCircle(0.0f, 0.0f, r);
+        if (timeState == DAY) glColor3f(0.4f, 0.4f, 0.4f);
+        else                  glColor3f(0.15f, 0.2f, 0.25f);
+        fillCircle(-r*0.3f, -r*0.2f, r*0.6f);
+        glPopMatrix();
+    }
 }
 
 // =============================================================================
@@ -499,6 +685,19 @@ void drawTree(float x, float y, float s) {
     glPushMatrix();
     glTranslatef(x, y, 0.0f);
     glScalef(s, s, 1.0f);   // scaling gives a sense of depth
+
+    // Ground shadow
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (timeState == DAY) glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+    else                  glColor4f(0.05f, 0.03f, 0.02f, 0.30f);
+    float shX = (timeState == DAY) ? -0.5f : 0.5f;
+    glPushMatrix();
+    glTranslatef(shX, -4.5f, 0.0f);
+    glScalef(1.1f, 0.35f, 1.0f);
+    fillCircle(0.0f, 0.0f, 2.8f);
+    glPopMatrix();
+    glDisable(GL_BLEND);
 
     // Trunk
     glColor3f(0.42f, 0.24f, 0.07f);
@@ -515,26 +714,29 @@ void drawTree(float x, float y, float s) {
     fillCircle(-0.55f, -4.5f, 0.28f);
     fillCircle( 0.55f, -4.5f, 0.28f);
 
+    // Sway offset based on tree X and global time
+    float sway = sinf(globalAnimTime * 1.5f + x * 0.5f) * 0.15f;
+
     // Canopy (four overlapping circles — base dark layer)
     if (timeState == DAY) glColor3f(0.06f, 0.32f, 0.05f);
     else                  glColor3f(0.03f, 0.16f, 0.04f);
-    fillCircle( 0.0f,  0.2f, 2.4f);
-    fillCircle(-1.7f, -0.3f, 1.9f);
-    fillCircle( 1.6f, -0.3f, 1.9f);
-    fillCircle( 0.0f,  1.7f, 1.9f);
+    fillCircle( sway + 0.0f,  0.2f, 2.4f);
+    fillCircle( sway - 1.7f, -0.3f, 1.9f);
+    fillCircle( sway + 1.6f, -0.3f, 1.9f);
+    fillCircle( sway + 0.0f,  1.7f, 1.9f);
 
     // Highlight clusters (lighter green on upper-left of each lobe)
     if (timeState == DAY) glColor3f(0.14f, 0.46f, 0.12f);
     else                  glColor3f(0.05f, 0.22f, 0.06f);
-    fillCircle(-0.6f,  1.2f, 1.2f);
-    fillCircle(-2.1f,  0.4f, 0.9f);
-    fillCircle( 0.0f,  2.6f, 1.0f);
+    fillCircle( sway - 0.6f,  1.2f, 1.2f);
+    fillCircle( sway - 2.1f,  0.4f, 0.9f);
+    fillCircle( sway + 0.0f,  2.6f, 1.0f);
 
     // Small shadow blobs on the lower-right of canopy
     if (timeState == DAY) glColor3f(0.03f, 0.20f, 0.03f);
     else                  glColor3f(0.01f, 0.10f, 0.02f);
-    fillCircle( 1.3f, -0.8f, 1.1f);
-    fillCircle( 0.4f, -0.5f, 0.8f);
+    fillCircle( sway + 1.3f, -0.8f, 1.1f);
+    fillCircle( sway + 0.4f, -0.5f, 0.8f);
 
     glPopMatrix();
 }
@@ -575,22 +777,40 @@ void drawForest() {
         float x = forestBankGrass[i].x,  y = forestBankGrass[i].y;
         float h = forestBankGrass[i].h,  s = forestBankGrass[i].spread;
         float l = forestBankGrass[i].lean;
-        glVertex2f(x, y); glVertex2f(x - s * 2.0f + l, y + h * 0.92f);  // left blade
-        glVertex2f(x, y); glVertex2f(x + l * 0.35f,    y + h * 1.10f);  // centre blade
-        glVertex2f(x, y); glVertex2f(x + s * 2.0f + l, y + h * 0.92f);  // right blade
+        float sway = sinf(globalAnimTime * 2.0f + x * 0.2f) * 0.15f;
+        glVertex2f(x, y); glVertex2f(x - s * 2.0f + l + sway, y + h * 0.92f);
+        glVertex2f(x, y); glVertex2f(x + l * 0.35f + sway,    y + h * 1.10f);
+        glVertex2f(x, y); glVertex2f(x + s * 2.0f + l + sway, y + h * 0.92f);
     }
-    // Patch grass scattered through the forest interior
     for (int i = 0; i < FOREST_PATCH_GRASS_COUNT; i++) {
         float x = forestPatchGrass[i].x,  y = forestPatchGrass[i].y;
         float h = forestPatchGrass[i].h,  s = forestPatchGrass[i].spread;
         float l = forestPatchGrass[i].lean;
-        glVertex2f(x, y); glVertex2f(x - s * 1.8f + l, y + h * 0.84f);
-        glVertex2f(x, y); glVertex2f(x + l * 0.35f,    y + h * 1.06f);
-        glVertex2f(x, y); glVertex2f(x + s * 1.8f + l, y + h * 0.84f);
+        float sway = sinf(globalAnimTime * 2.0f + x * 0.2f) * 0.15f;
+        glVertex2f(x, y); glVertex2f(x - s * 1.8f + l + sway, y + h * 0.84f);
+        glVertex2f(x, y); glVertex2f(x + l * 0.35f + sway,    y + h * 1.06f);
+        glVertex2f(x, y); glVertex2f(x + s * 1.8f + l + sway, y + h * 0.84f);
     }
     glEnd();
     glDisable(GL_LINE_SMOOTH);
     glLineWidth(1.0f);
+
+    // Falling Leaves
+    if (timeState == DAY) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glPointSize(4.0f);
+        glBegin(GL_POINTS);
+        for (int i = 0; i < LEAF_COUNT; i++) {
+            if (leaves[i].active) {
+                glColor4f(0.15f, 0.50f, 0.15f, leaves[i].alpha); // Leaf green
+                glVertex2f(leaves[i].x, leaves[i].y);
+            }
+        }
+        glEnd();
+        glPointSize(1.0f);
+        glDisable(GL_BLEND);
+    }
 
     // Trees at different sizes to suggest depth (near = big, far = small)
     drawTree(-33.0f,  6.0f, 1.25f);
@@ -600,13 +820,33 @@ void drawForest() {
     drawTree( -8.5f,  4.2f, 0.78f);
     drawTree(-20.5f, -2.8f, 0.72f);
     drawTree(-35.5f, -4.8f, 0.68f);
+    // Extra Trees
+    drawTree(-38.0f,  3.0f, 0.85f);
+    drawTree(-28.0f,  7.5f, 1.10f);
+    drawTree(-12.0f,  8.0f, 0.65f);
+    drawTree(-35.0f, -10.0f, 0.75f);
+    drawTree(-18.0f,  2.0f, 0.82f);
+    drawTree( -5.0f,  12.0f, 0.60f);
 }
 
 // Fireflies — night only, rendered as glowing points
 void drawFireflies() {
     if (timeState != NIGHT) return;
-    glColor3f(0.75f, 0.95f, 0.25f);
-    glPointSize(4.0f);
+
+    // Glowing aura (pulsing)
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    for (int i = 0; i < FIREFLY_COUNT; i++) {
+        // Different phase for each firefly using its index
+        float pulse = (sinf(windmillAngle * 0.05f + i * 1.3f) + 1.0f) * 0.5f; // 0.0 to 1.0
+        glColor4f(0.75f, 0.95f, 0.25f, 0.15f + 0.25f * pulse);
+        fillCircle(fireflyX[i], fireflyY[i], 0.15f + 0.35f * pulse);
+    }
+    glDisable(GL_BLEND);
+
+    // Bright core
+    glColor3f(0.85f, 1.0f, 0.40f);
+    glPointSize(3.0f);
     glBegin(GL_POINTS);
     for (int i = 0; i < FIREFLY_COUNT; i++) {
         glVertex2f(fireflyX[i], fireflyY[i]);
@@ -634,6 +874,19 @@ void drawFence() {
     for (float px = xStart; px <= xEnd + 0.1f; px += spacing) {
         if (px > gapLeft && px < gapRight) continue;   // skip the gate gap
         float py = fenceBase(px);
+
+        // Ground shadow
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        if (timeState == DAY) glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+        else                  glColor4f(0.05f, 0.03f, 0.02f, 0.30f);
+        glPushMatrix();
+        glTranslatef(px, py, 0.0f);
+        glScalef(1.0f, 0.35f, 1.0f);
+        fillCircle(0.0f, 0.0f, 0.85f);
+        glPopMatrix();
+        glDisable(GL_BLEND);
+
         glColor3f(0.42f, 0.24f, 0.07f);
         fillRect(px - postHW, py, postHW * 2.0f, postH);
         glColor3f(0.28f, 0.14f, 0.03f);
@@ -913,6 +1166,56 @@ void drawVillage() {
         glVertex2f(-40.0f, -30.0f);
     glEnd();
 
+    // Dynamic Chickens roaming the village (behind houses layer)
+    if (timeState == DAY) {
+        float hX[3] = {10.0f, 22.0f, 32.0f};
+        float hY[3] = {-15.0f, -14.0f, -10.0f}; // well below river, behind houses
+        for(int i = 0; i < 3; i++) {
+            float tOff = i * 2.3f;
+            float mPhase = globalAnimTime * 0.4f + tOff;
+            float cx = hX[i] + sinf(mPhase) * 2.5f;
+            float cy = hY[i] + sinf(mPhase * 1.5f) * 0.3f;
+            float dir = cosf(mPhase) > 0 ? 1.0f : -1.0f;
+            
+            bool isPecking = fmodf(globalAnimTime*1.5f + tOff, 4.0f) < 1.0f;
+            float headAngle = isPecking ? -45.0f : 0.0f;
+
+            glPushMatrix();
+            glTranslatef(cx, cy, 0.0f);
+            glScalef(dir, 0.8f, 1.0f); // slightly smaller since they are behind
+            
+            // shadow
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.0f, 0.0f, 0.0f, 0.15f);
+            glPushMatrix(); glTranslatef(0.0f, -0.4f, 0.0f); glScalef(1.0f, 0.3f, 1.0f); fillCircle(0.0f, 0.0f, 0.5f); glPopMatrix();
+            glDisable(GL_BLEND);
+
+            glColor3f(0.85f, 0.65f, 0.1f);
+            drawLine(-0.2f, 0.0f, -0.2f, -0.4f, 1.5f);
+            drawLine( 0.2f, 0.0f,  0.2f, -0.4f, 1.5f);
+
+            glColor3f(0.95f, 0.95f, 0.95f);
+            fillCircle(0.0f, 0.2f, 0.45f);
+            glBegin(GL_TRIANGLES); glVertex2f(-0.3f, 0.2f); glVertex2f(-0.7f, 0.5f); glVertex2f(-0.2f, -0.1f); glEnd();
+            
+            glPushMatrix();
+            glTranslatef(0.3f, 0.4f, 0.0f);
+            glRotatef(headAngle, 0.0f, 0.0f, 1.0f);
+            fillCircle(0.2f, 0.1f, 0.25f);
+            glColor3f(0.9f, 0.6f, 0.1f);
+            glBegin(GL_TRIANGLES); glVertex2f(0.4f, 0.15f); glVertex2f(0.6f, 0.05f); glVertex2f(0.35f, -0.05f); glEnd();
+            glColor3f(0.1f, 0.1f, 0.1f);
+            fillCircle(0.25f, 0.15f, 0.05f);
+            glColor3f(0.8f, 0.1f, 0.1f);
+            fillCircle(0.2f, 0.4f, 0.1f);
+            fillCircle(0.1f, 0.35f, 0.08f);
+            glPopMatrix();
+
+            glPopMatrix();
+        }
+    }
+
     // Short grass (two blades per tuft)
     if (timeState == DAY) glColor3f(0.08f, 0.38f, 0.04f);
     else                  glColor3f(0.04f, 0.18f, 0.02f);
@@ -922,15 +1225,59 @@ void drawVillage() {
         float x = villageGrass[i].x,  y = villageGrass[i].y;
         float h = villageGrass[i].h,  s = villageGrass[i].spread;
         float l = villageGrass[i].lean;
-        glVertex2f(x, y); glVertex2f(x - s + l, y + h * 0.95f);
-        glVertex2f(x, y); glVertex2f(x + s + l, y + h * 0.95f);
+        float sway = sinf(globalAnimTime * 2.2f + x * 0.3f) * 0.1f;
+        glVertex2f(x, y); glVertex2f(x - s + l + sway, y + h * 0.95f);
+        glVertex2f(x, y); glVertex2f(x + s + l + sway, y + h * 0.95f);
     }
     glEnd();
     glLineWidth(1.0f);
 
+    // Bush 1
+    if (timeState == DAY) glColor3f(0.12f, 0.40f, 0.10f);
+    else                  glColor3f(0.04f, 0.18f, 0.05f);
+    fillCircle(6.0f, -26.0f, 1.5f);
+    fillCircle(4.5f, -27.0f, 1.2f);
+    fillCircle(7.5f, -27.5f, 1.3f);
+    if (timeState == DAY) glColor3f(0.18f, 0.48f, 0.14f);
+    else                  glColor3f(0.06f, 0.22f, 0.07f);
+    fillCircle(5.8f, -25.2f, 0.8f);
+    fillCircle(6.8f, -26.5f, 0.7f);
+
+    // Bush 2 near House 2
+    if (timeState == DAY) glColor3f(0.12f, 0.40f, 0.10f);
+    else                  glColor3f(0.04f, 0.18f, 0.05f);
+    fillCircle(30.0f, -10.0f, 1.6f);
+    fillCircle(31.5f, -11.0f, 1.2f);
+    if (timeState == DAY) glColor3f(0.18f, 0.48f, 0.14f);
+    else                  glColor3f(0.06f, 0.22f, 0.07f);
+    fillCircle(30.5f, -9.2f, 0.8f);
+
+    // Stepping stones from House 1 to gap
+    if (timeState == DAY) glColor3f(0.48f, 0.50f, 0.48f);
+    else                  glColor3f(0.20f, 0.22f, 0.20f);
+    float pathX[] = {12.0f, 9.0f, 6.0f, 2.5f, -1.0f};
+    float pathY[] = {-28.5f, -29.0f, -28.2f, -27.0f, -25.0f};
+    for (int i=0; i<5; i++) {
+        glPushMatrix();
+        glTranslatef(pathX[i], pathY[i], 0.0f);
+        glScalef(1.2f, 0.5f, 1.0f);
+        fillCircle(0.0f, 0.0f, 0.6f);
+        glPopMatrix();
+    }
+
     // Clothesline poles
     float poleBaseY = -27.8f;
     float poleH     =   7.4f;
+
+    // Shadows for poles
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (timeState == DAY) glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+    else                  glColor4f(0.05f, 0.03f, 0.02f, 0.30f);
+    glPushMatrix(); glTranslatef(-8.2f, poleBaseY, 0.0f); glScalef(1.0f, 0.35f, 1.0f); fillCircle(0.0f, 0.0f, 0.85f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 3.8f, poleBaseY, 0.0f); glScalef(1.0f, 0.35f, 1.0f); fillCircle(0.0f, 0.0f, 0.85f); glPopMatrix();
+    glDisable(GL_BLEND);
+
     if (timeState == DAY) glColor3f(0.44f, 0.27f, 0.11f);
     else                  glColor3f(0.27f, 0.18f, 0.08f);
     fillRect(-8.5f, poleBaseY, 0.60f, poleH);
@@ -974,6 +1321,14 @@ void drawVillage() {
     fillRect( 1.4f, -21.37f, 0.16f, 0.28f);
 
     // House 1 (walls + roof triangle + door + window)
+    // House 1 shadow
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (timeState == DAY) glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+    else                  glColor4f(0.05f, 0.03f, 0.02f, 0.30f);
+    glPushMatrix(); glTranslatef(14.5f, -28.0f, 0.0f); glScalef(1.0f, 0.25f, 1.0f); fillCircle(0.0f, 0.0f, 7.8f); glPopMatrix();
+    glDisable(GL_BLEND);
+
     glColor3f(0.42f, 0.23f, 0.09f);
     fillRect(8.0f, -28.0f, 13.0f, 11.0f);
 
@@ -984,6 +1339,12 @@ void drawVillage() {
         glVertex2f(22.0f, -17.0f);
     glEnd();
 
+    // House 1 Chimney
+    glColor3f(0.35f, 0.20f, 0.10f); // dark brick color
+    fillRect(10.5f, -15.0f, 1.2f, 3.5f);
+    glColor3f(0.42f, 0.23f, 0.09f); // lighter top
+    fillRect(10.3f, -11.5f, 1.6f, 0.4f);
+
     glColor3f(0.18f, 0.09f, 0.03f);
     fillRect(12.5f, -28.0f, 3.5f, 5.0f);
 
@@ -991,7 +1352,40 @@ void drawVillage() {
     else                  glColor3f(0.95f, 0.85f, 0.30f);  // glowing yellow at night
     fillRect(9.5f, -22.0f, 2.5f, 2.5f);
 
+    // Window light spill on ground at night
+    if (timeState == NIGHT) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.95f, 0.85f, 0.30f, 0.20f);
+        glBegin(GL_POLYGON);
+            glVertex2f(9.5f, -22.0f);
+            glVertex2f(12.0f, -22.0f);
+            glVertex2f(13.5f, -28.0f);
+            glVertex2f(8.5f, -28.0f);
+        glEnd();
+        glDisable(GL_BLEND);
+    }
+
+    // Inner glass shadow & wooden panes to give depth
+    if (timeState == DAY) glColor3f(0.65f, 0.60f, 0.45f);
+    else                  glColor3f(0.80f, 0.70f, 0.20f);
+    fillRect(9.5f, -19.8f, 2.5f, 0.3f);  // top inner shadow
+    fillRect(9.5f, -22.0f, 0.3f, 2.5f);  // left inner shadow
+
+    glColor3f(0.20f, 0.10f, 0.04f);      // dark wood frame
+    fillRect(10.6f, -22.0f, 0.3f, 2.5f); // vertical pane
+    fillRect(9.5f, -21.0f, 2.5f, 0.3f);  // horizontal pane
+
+
     // House 2 (smaller, top-right corner)
+    // House 2 shadow
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (timeState == DAY) glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+    else                  glColor4f(0.05f, 0.03f, 0.02f, 0.30f);
+    glPushMatrix(); glTranslatef(36.5f, -12.0f, 0.0f); glScalef(1.0f, 0.25f, 1.0f); fillCircle(0.0f, 0.0f, 3.2f); glPopMatrix();
+    glDisable(GL_BLEND);
+
     glColor3f(0.55f, 0.28f, 0.10f);
     fillRect(34.0f, -12.0f, 5.0f, 6.0f);
 
@@ -1002,14 +1396,52 @@ void drawVillage() {
         glVertex2f(40.0f, -6.0f);
     glEnd();
 
+    // House 2 Chimney
+    glColor3f(0.40f, 0.22f, 0.12f);
+    fillRect(34.2f, -4.8f, 0.9f, 2.5f);
+    glColor3f(0.48f, 0.26f, 0.10f);
+    fillRect(34.0f, -2.3f, 1.3f, 0.3f);
+
     if (timeState == DAY) glColor3f(0.82f, 0.76f, 0.58f);
     else                  glColor3f(0.95f, 0.85f, 0.30f);
     fillRect(34.5f, -10.0f, 1.8f, 1.8f);
+
+    // Window light spill on ground at night
+    if (timeState == NIGHT) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.95f, 0.85f, 0.30f, 0.20f);
+        glBegin(GL_POLYGON);
+            glVertex2f(34.5f, -10.0f);
+            glVertex2f(36.3f, -10.0f);
+            glVertex2f(37.3f, -12.0f);
+            glVertex2f(33.5f, -12.0f);
+        glEnd();
+        glDisable(GL_BLEND);
+    }
+
+    // Inner shadow & wooden panes
+    if (timeState == DAY) glColor3f(0.65f, 0.60f, 0.45f);
+    else                  glColor3f(0.80f, 0.70f, 0.20f);
+    fillRect(34.5f, -8.4f, 1.8f, 0.2f);
+    fillRect(34.5f, -10.0f, 0.2f, 1.8f);
+
+    glColor3f(0.20f, 0.10f, 0.04f);
+    fillRect(35.3f, -10.0f, 0.2f, 1.8f);
+    fillRect(34.5f, -9.2f, 1.8f, 0.2f);
 
     glColor3f(0.18f, 0.09f, 0.03f);
     fillRect(37.0f, -12.0f, 1.6f, 3.2f);
 
     // Windmill body (tapered tower)
+    // Windmill shadow
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (timeState == DAY) glColor4f(0.10f, 0.07f, 0.05f, 0.24f);
+    else                  glColor4f(0.05f, 0.03f, 0.02f, 0.30f);
+    glPushMatrix(); glTranslatef(30.0f, -27.0f, 0.0f); glScalef(1.0f, 0.25f, 1.0f); fillCircle(0.0f, 0.0f, 5.5f); glPopMatrix();
+    glDisable(GL_BLEND);
+
     glColor3f(0.52f, 0.38f, 0.22f);
     glBegin(GL_QUADS);
         glVertex2f(25.5f, -27.0f);
@@ -1025,6 +1457,30 @@ void drawVillage() {
     else                  glColor3f(0.95f, 0.85f, 0.30f);
     fillRect(28.8f, -16.0f, 2.4f, 2.4f);  // window
 
+    // Window light spill on windmill body at night
+    if (timeState == NIGHT) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.95f, 0.85f, 0.30f, 0.15f);
+        glBegin(GL_POLYGON);
+            glVertex2f(28.8f, -16.0f);
+            glVertex2f(31.2f, -16.0f);
+            glVertex2f(33.5f, -28.0f);
+            glVertex2f(26.5f, -28.0f);
+        glEnd();
+        glDisable(GL_BLEND);
+    }
+
+    // Inner shadow & wooden panes
+    if (timeState == DAY) glColor3f(0.60f, 0.55f, 0.42f);
+    else                  glColor3f(0.80f, 0.70f, 0.20f);
+    fillRect(28.8f, -13.9f, 2.4f, 0.3f);
+    fillRect(28.8f, -16.0f, 0.3f, 2.4f);
+
+    glColor3f(0.20f, 0.10f, 0.04f);
+    fillRect(29.85f, -16.0f, 0.3f, 2.4f);
+    fillRect(28.8f, -14.95f, 2.4f, 0.3f);
+
     // Windmill blades — rotate around the pivot point using glRotatef
     float pivotX = 30.0f;
     float pivotY = -8.0f;
@@ -1039,6 +1495,20 @@ void drawVillage() {
     // Pivot hub circle
     glColor3f(0.38f, 0.22f, 0.08f);
     fillCircle(pivotX, pivotY, 0.7f);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    for (int i=0; i<SMOKE_COUNT; i++) {
+        if (smokeParticles[i].active) {
+            float c = (timeState == DAY) ? 0.7f : 0.3f;
+            glColor4f(c, c, c, smokeParticles[i].alpha);
+            fillCircle(smokeParticles[i].x, smokeParticles[i].y, smokeParticles[i].size);
+        }
+    }
+    glDisable(GL_BLEND);
+
+    // Tree in front of houses / Left of windmill
+    drawTree(22.0f, -25.5f, 1.25f);
 }
 
 // =============================================================================
@@ -1047,22 +1517,17 @@ void drawVillage() {
 
 void drawBirds() {
     if (timeState != DAY) return;
-
-    glColor3f(0.08f, 0.08f, 0.08f);
-    glLineWidth(1.8f);
-    glEnable(GL_LINE_SMOOTH);
-    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-
-    for (int i = 0; i < 3; i++) {
-        // Each bird is a simple V-shape: left tip → centre → right tip
-        glBegin(GL_LINE_STRIP);
-            glVertex2f(birdX[i] - 1.3f, birdY[i] + 0.5f);  // left wing tip
-            glVertex2f(birdX[i],        birdY[i]        );  // body centre
-            glVertex2f(birdX[i] + 1.3f, birdY[i] + 0.5f);  // right wing tip
+    glColor3f(0.1f, 0.1f, 0.1f); // Dark silhouettes
+    glLineWidth(2.0f);
+    for (int i = 0; i < BIRD_COUNT; i++) {
+        float flap = sinf(globalAnimTime * 5.0f + i * 1.5f) * 0.4f;
+        glBegin(GL_LINES);
+        glVertex2f(birdX[i],       birdY[i]); glVertex2f(birdX[i] - 0.7f, birdY[i] + 0.3f + flap);
+        glVertex2f(birdX[i] - 0.7f, birdY[i] + 0.3f + flap); glVertex2f(birdX[i] - 1.2f, birdY[i] + 0.2f + flap);
+        glVertex2f(birdX[i],       birdY[i]); glVertex2f(birdX[i] + 0.7f, birdY[i] + 0.3f + flap);
+        glVertex2f(birdX[i] + 0.7f, birdY[i] + 0.3f + flap); glVertex2f(birdX[i] + 1.2f, birdY[i] + 0.2f + flap);
         glEnd();
     }
-
-    glDisable(GL_LINE_SMOOTH);
     glLineWidth(1.0f);
 }
 
@@ -1071,6 +1536,8 @@ void drawBirds() {
 // =============================================================================
 
 void timer(int value) {
+    globalAnimTime += 0.016f;
+
     // Auto day/night cycle every ~10 seconds
     dayNightCounter++;
     if (dayNightCounter >= DAY_NIGHT_INTERVAL) {
@@ -1083,11 +1550,93 @@ void timer(int value) {
     if (windmillAngle >= 360.0f) windmillAngle -= 360.0f;
 
     // Clouds drift across the sky (day only)
-    if (timeState == DAY) {
-        for (int i = 0; i < 4; i++) {
-            cloudOffset[i] += CLOUD_SPEED[i];
-            if (cloudOffset[i] > 90.0f) cloudOffset[i] = 0.0f;
+    for (int i = 0; i < CLOUD_COUNT; i++) {
+        cloudOffset[i] += CLOUD_SPEED[i];
+        if (cloudOffset[i] > 90.0f) cloudOffset[i] = 0.0f;
+    }
+
+    // Smoke particles update
+    for (int i=0; i<SMOKE_COUNT; i++) {
+        if (smokeParticles[i].active) {
+            smokeParticles[i].y += 0.03f;
+            smokeParticles[i].x += 0.015f + sinf(globalAnimTime * 2.0f + i) * 0.01f;
+            smokeParticles[i].size += 0.012f;
+            smokeParticles[i].alpha -= 0.003f;
+            if (smokeParticles[i].alpha <= 0.0f) smokeParticles[i].active = false;
+        } else {
+            if (frand01() < 0.05f) { // spawn new
+                smokeParticles[i].active = true;
+                bool house1 = frand01() > 0.5f;
+                smokeParticles[i].x = house1 ? 11.1f : 34.6f;
+                smokeParticles[i].y = house1 ? -10.6f : -1.7f;
+                smokeParticles[i].size = 0.3f;
+                smokeParticles[i].alpha = 0.4f;
+            }
         }
+    }
+
+    // Ripples update
+    for (int i=0; i<RIPPLE_COUNT; i++) {
+        if (ripples[i].active) {
+            ripples[i].radius += 0.008f; // slowed down
+            ripples[i].alpha -= 0.002f;  // slowed down
+            if (ripples[i].alpha <= 0.0f) ripples[i].active = false;
+        } else {
+            if (frand01() < 0.001f) { // spawn new ripple
+                ripples[i].active = true;
+                ripples[i].x = -35.0f + frand01() * 70.0f;
+                float yt = riverUpperBankY(ripples[i].x);
+                float yb = riverLowerBankY(ripples[i].x);
+                ripples[i].y = yb + frand01() * (yt - yb);
+                ripples[i].radius = 0.1f;
+                ripples[i].alpha = 0.6f;
+            }
+        }
+    }
+
+    // Leaves update
+    if (timeState == DAY) {
+        for (int i=0; i<LEAF_COUNT; i++) {
+            if (leaves[i].active) {
+                leaves[i].y -= 0.04f;
+                leaves[i].x -= 0.02f + sinf(globalAnimTime * 3.0f + leaves[i].drift) * 0.03f;
+                if (leaves[i].y < riverUpperBankY(leaves[i].x) + 2.0f) leaves[i].alpha -= 0.02f;
+                if (leaves[i].alpha <= 0.0f) leaves[i].active = false;
+            } else {
+                if (frand01() < 0.03f) {
+                    leaves[i].active = true;
+                    float txs[] = {-33.0f, -23.0f, -15.0f, -30.0f, -8.5f, -20.5f, -35.5f};
+                    float tys[] = { 6.0f,   6.5f,   5.5f,  -1.0f,  4.2f,  -2.8f,  -4.8f};
+                    int ti = rand() % 7;
+                    leaves[i].x = txs[ti] + (frand01()-0.5f)*3.0f;
+                    leaves[i].y = tys[ti] + 1.0f + frand01()*2.0f;
+                    leaves[i].alpha = 1.0f;
+                    leaves[i].drift = frand01() * 10.0f;
+                }
+            }
+        }
+    } else {
+        for (int i=0; i<LEAF_COUNT; i++) leaves[i].active = false;
+    }
+
+    // Shooting star update
+    if (timeState == NIGHT) {
+        if (shootingStar.active) {
+            shootingStar.x -= 0.6f;
+            shootingStar.y -= 0.3f;
+            shootingStar.alpha -= 0.015f;
+            if (shootingStar.alpha <= 0.0f || shootingStar.x < -50.0f) shootingStar.active = false;
+        } else {
+            if (frand01() < 0.003f) {
+                shootingStar.active = true;
+                shootingStar.x = 10.0f + frand01() * 30.0f;
+                shootingStar.y = 20.0f + frand01() * 10.0f;
+                shootingStar.len = 4.0f + frand01() * 4.0f;
+                shootingStar.alpha = 1.0f;
+            }
+        }
+    } else {
+        shootingStar.active = false;
     }
 
     // Fireflies drift randomly within their zones (night only)
@@ -1122,9 +1671,9 @@ void timer(int value) {
         if (deerX < DEER_X_MIN) { deerX = DEER_X_MIN; deerDir =  1.0f; }
     }
 
-    // Bird translation — moves right, resets off-screen to the left when it exits
+    // Birds translation — moves right, resets off-screen to the left when it exits
     if (timeState == DAY) {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < BIRD_COUNT; i++) {
             birdX[i] += BIRD_SPEED;
             if (birdX[i] > 45.0f) birdX[i] = -50.0f;
         }
@@ -1142,7 +1691,8 @@ void display() {
     drawSky();        // background (must be first)
     drawSun();
     drawMoon();
-    drawBirds();      // in front of sky, behind everything else
+    drawClouds();     // in front of sun/moon
+    drawBirds();      // in front of clouds, behind everything else
     drawForest();     // drawn before river so river sits on top
     drawRiver();
     drawVillage();
@@ -1186,6 +1736,7 @@ void init() {
     initGrass();
     initFireflies();
     initStars();
+    initDetails();
 }
 
 int main(int argc, char** argv) {
