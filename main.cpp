@@ -28,6 +28,10 @@ const float WORLD_TOP    =  30.0f;
 
 float windmillAngle = 0.0f;
 
+// Auto day/night cycle — toggles every ~10 seconds (625 ticks × 16 ms ≈ 10 s)
+int dayNightCounter = 0;
+const int DAY_NIGHT_INTERVAL = 625;
+
 // Cat moves along the village fence (day only)
 float catX   = -5.0f;
 float catDir =  1.0f;   // +1 = moving right, -1 = moving left
@@ -501,14 +505,36 @@ void drawTree(float x, float y, float s) {
     fillRect(-0.7f, -4.5f, 1.4f, 4.8f);
     glColor3f(0.28f, 0.14f, 0.03f);
     fillRect( 0.1f, -4.5f, 0.6f, 4.8f);   // shadow strip on right
+    // Bark texture lines
+    glColor3f(0.22f, 0.11f, 0.02f);
+    drawLine(-0.45f, -4.0f, -0.45f, -1.8f, 1.0f);
+    drawLine(-0.10f, -4.3f, -0.10f, -0.8f, 1.0f);
+    drawLine( 0.35f, -3.8f,  0.35f, -2.2f, 1.0f);
+    // Root flare bumps at base
+    glColor3f(0.35f, 0.18f, 0.05f);
+    fillCircle(-0.55f, -4.5f, 0.28f);
+    fillCircle( 0.55f, -4.5f, 0.28f);
 
-    // Canopy (four overlapping circles)
-    if (timeState == DAY) glColor3f(0.12f, 0.48f, 0.10f);
-    else                  glColor3f(0.06f, 0.26f, 0.07f);
+    // Canopy (four overlapping circles — base dark layer)
+    if (timeState == DAY) glColor3f(0.06f, 0.32f, 0.05f);
+    else                  glColor3f(0.03f, 0.16f, 0.04f);
     fillCircle( 0.0f,  0.2f, 2.4f);
     fillCircle(-1.7f, -0.3f, 1.9f);
     fillCircle( 1.6f, -0.3f, 1.9f);
     fillCircle( 0.0f,  1.7f, 1.9f);
+
+    // Highlight clusters (lighter green on upper-left of each lobe)
+    if (timeState == DAY) glColor3f(0.14f, 0.46f, 0.12f);
+    else                  glColor3f(0.05f, 0.22f, 0.06f);
+    fillCircle(-0.6f,  1.2f, 1.2f);
+    fillCircle(-2.1f,  0.4f, 0.9f);
+    fillCircle( 0.0f,  2.6f, 1.0f);
+
+    // Small shadow blobs on the lower-right of canopy
+    if (timeState == DAY) glColor3f(0.03f, 0.20f, 0.03f);
+    else                  glColor3f(0.01f, 0.10f, 0.02f);
+    fillCircle( 1.3f, -0.8f, 1.1f);
+    fillCircle( 0.4f, -0.5f, 0.8f);
 
     glPopMatrix();
 }
@@ -1020,6 +1046,13 @@ void drawBirds() {
 // =============================================================================
 
 void timer(int value) {
+    // Auto day/night cycle every ~10 seconds
+    dayNightCounter++;
+    if (dayNightCounter >= DAY_NIGHT_INTERVAL) {
+        dayNightCounter = 0;
+        timeState = (timeState == DAY) ? NIGHT : DAY;
+    }
+
     // Windmill rotates continuously
     windmillAngle += 1.2f;
     if (windmillAngle >= 360.0f) windmillAngle -= 360.0f;
