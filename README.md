@@ -6,7 +6,6 @@
 
 ![Zero Point Showcase](planning/showcase.gif)
 
-
 ## Scene Overview
 
 | Zone | Elements |
