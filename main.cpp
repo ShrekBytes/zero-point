@@ -41,8 +41,8 @@ const float DEER_X_MAX =  8.0f;
 float windmillAngle = 0.0f;
 
 // Bird animation globals (Person 1)
-float birdX[3]        = { -45.0f, -55.0f, -62.0f };  // start off-screen left
-float birdY[3]        = {  22.0f,  18.5f,  25.0f };  // different sky heights
+float birdX[3]        = { -45.0f, -55.0f, -62.0f };
+float birdY[3]        = {  22.0f,  18.5f,  25.0f };
 const float BIRD_SPEED = 0.035f;
 
 // ============================================================================
@@ -76,34 +76,23 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
 }
 
 // ============================================================================
-// ALGORITHM: Bresenham's Line Drawing  [Person 1 — owns this]
-//
-// Works by tracking a cumulative error term (err) that decides whether
-// to step in the minor axis each iteration — integer-only arithmetic,
-// no floating-point needed.
-//
-//   dx, dy  = absolute delta in each axis
-//   sx, sy  = step direction (+1 or -1) for each axis
-//   err     = current accumulated error
-//   e2      = doubled error used for the two threshold comparisons
-//
-// Used for: both edges of the diagonal river
+// ALGORITHM: Bresenham's Line Drawing
 // ============================================================================
 void drawLineBresenham(int x1, int y1, int x2, int y2) {
-    int dx  =  abs(x2 - x1);
-    int dy  =  abs(y2 - y1);
-    int sx  = (x1 < x2) ? 1 : -1;   // horizontal step direction
-    int sy  = (y1 < y2) ? 1 : -1;   // vertical step direction
-    int err =  dx - dy;              // initial error
+    int dx = abs(x2 - x1);
+    int dy = abs(y2 - y1);
+    int sx = (x1 < x2) ? 1 : -1;
+    int sy = (y1 < y2) ? 1 : -1;
+    int err = dx - dy;
 
     glBegin(GL_POINTS);
     while (true) {
         glVertex2i(x1, y1);
-        if (x1 == x2 && y1 == y2) break;   // reached destination
+        if (x1 == x2 && y1 == y2) break;
 
         int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; x1 += sx; }   // step horizontally
-        if (e2 <  dx) { err += dx; y1 += sy; }   // step vertically
+        if (e2 > -dy) { err -= dy; x1 += sx; }
+        if (e2 < dx)  { err += dx; y1 += sy; }
     }
     glEnd();
 }
@@ -150,39 +139,59 @@ void drawMoon() {
 }
 
 // ============================================================================
-// RIVER  [Person 1 — owns this]
-//
-// The diagonal river runs from top-right to bottom-left across the scene.
-// Two parallel Bresenham edges define the river boundaries; the body is
-// a filled GL_POLYGON between them, with a shimmer strip in the centre.
-//
-// Upper edge: (40, 10) -> (-40, -20)   ALGORITHM: Bresenham
-// Lower edge: (40,  5) -> (-40, -25)   ALGORITHM: Bresenham
+// Stage 3B: River
 // ============================================================================
 void drawRiver() {
-    // --- Main river body: filled polygon between the two Bresenham edges ---
-    glColor3f(0.20f, 0.52f, 0.80f);
+    // River coordinates (all share slope = 30/80 = 0.375):
+    //   Upper bank top : (40, 15) -> (-40, -15)
+    //   Upper bank bot : (40, 14) -> (-40, -16)   <- water starts here
+    //   Lower bank top : (40,  6) -> (-40, -24)   <- water ends here
+    //   Lower bank bot : (40,  5) -> (-40, -25)
+    // fenceBase uses lower bank bot (y=5 at x=40), offset -2.0
+    // forestBase uses upper bank top (y=15 at x=40), offset +3.5
+
+    // --- Upper thin brown bank (1 unit thick) ---
+    glColor3f(0.28f, 0.14f, 0.04f);
     glBegin(GL_POLYGON);
-        glVertex2f( 40.0f,  10.0f);   // upper-right
-        glVertex2f( 40.0f,   5.0f);   // lower-right
-        glVertex2f(-40.0f, -25.0f);   // lower-left
-        glVertex2f(-40.0f, -20.0f);   // upper-left
+        glVertex2f( 40.0f,  15.0f);
+        glVertex2f( 40.0f,  14.0f);
+        glVertex2f(-40.0f, -16.0f);
+        glVertex2f(-40.0f, -15.0f);
     glEnd();
 
-    // --- Centre shimmer strip: lighter blue highlight ---
-    glColor3f(0.38f, 0.68f, 0.92f);
+    // --- Lower thin brown bank (1 unit thick) ---
+    glColor3f(0.28f, 0.14f, 0.04f);
     glBegin(GL_POLYGON);
-        glVertex2f( 40.0f,  8.5f);
-        glVertex2f( 40.0f,  6.5f);
-        glVertex2f(-40.0f, -21.5f);
-        glVertex2f(-40.0f, -23.5f);
+        glVertex2f( 40.0f,   6.0f);
+        glVertex2f( 40.0f,   5.0f);
+        glVertex2f(-40.0f, -25.0f);
+        glVertex2f(-40.0f, -24.0f);
     glEnd();
 
-    // --- Dark earthy bank lines drawn with Bresenham algorithm ---
-    glColor3f(0.30f, 0.18f, 0.06f);
-    glPointSize(2.5f);
-    drawLineBresenham( 40, 10, -40, -20);   // ALGORITHM: Bresenham -- upper bank edge
-    drawLineBresenham( 40,  5, -40, -25);   // ALGORITHM: Bresenham -- lower bank edge
+    // --- River body: single solid deep blue ---
+    glColor3f(0.18f, 0.48f, 0.78f);
+    glBegin(GL_POLYGON);
+        glVertex2f( 40.0f,  14.0f);
+        glVertex2f( 40.0f,   6.0f);
+        glVertex2f(-40.0f, -24.0f);
+        glVertex2f(-40.0f, -16.0f);
+    glEnd();
+
+    // --- ALGORITHM: Bresenham -- upper and lower bank edges ---
+    glColor3f(0.20f, 0.10f, 0.02f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+        glVertex2f( 40.0f,  15.0f); glVertex2f(-40.0f, -15.0f);
+    glEnd();
+    glBegin(GL_LINES);
+        glVertex2f( 40.0f,   5.0f); glVertex2f(-40.0f, -25.0f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    glColor3f(0.15f, 0.07f, 0.01f);
+    glPointSize(1.5f);
+    drawLineBresenham( 40, 15, -40, -15);  // ALGORITHM: Bresenham -- upper bank
+    drawLineBresenham( 40,  5, -40, -25);  // ALGORITHM: Bresenham -- lower bank
     glPointSize(1.0f);
 }
 
@@ -192,7 +201,7 @@ void drawRiver() {
 // Offset -2.5 downward so fence stands on dry ground below the bank
 // ============================================================================
 float fenceBase(float x) {
-    return 4.0f + (x - 40.0f) * 0.4125f - 2.5f;
+    return 5.0f + (x - 40.0f) * 0.375f - 2.0f;
 }
 
 // ============================================================================
@@ -201,7 +210,7 @@ float fenceBase(float x) {
 // Offset +4.5 upward so deer stands on dry ground well above the bank
 // ============================================================================
 float forestBase(float x) {
-    return 10.0f + (x - 40.0f) * 0.375f + 4.5f;
+    return 15.0f + (x - 40.0f) * 0.375f + 3.5f;
 }
 
 // ============================================================================
@@ -689,36 +698,23 @@ void drawVillage() {
 
 // ============================================================================
 // BIRDS  [Person 1 -- owns this]
-//
-// Three birds drawn as V-shapes using GL_LINE_STRIP, visible day only.
-// Each bird is a left-wing tip -> centre -> right-wing tip polyline.
-//
-// TRANSFORM: Translation -- birdX[] increments every frame in timer().
-//            When a bird drifts past the right edge it resets off the
-//            left edge so it loops continuously across the sky.
+// Three V-shape birds (GL_LINE_STRIP), day only.
+// TRANSFORM: Translation -- birdX[] increments each frame, loops from left.
 // ============================================================================
 void drawBirds() {
     if (timeState != DAY) return;
-
     glColor3f(0.08f, 0.08f, 0.08f);
     glLineWidth(1.8f);
     glEnable(GL_LINE_SMOOTH);
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-
     for (int i = 0; i < 3; i++) {
-        float bx = birdX[i];
-        float by = birdY[i];
-        float ws = 1.3f;   // half wing-span
-        float wh = 0.5f;   // wing dip height
-
-        // V-shape: left tip -> body centre -> right tip
+        float bx = birdX[i], by = birdY[i];
         glBegin(GL_LINE_STRIP);
-            glVertex2f(bx - ws, by + wh);   // left wing tip
-            glVertex2f(bx,      by);         // centre (body)
-            glVertex2f(bx + ws, by + wh);   // right wing tip
+            glVertex2f(bx - 1.3f, by + 0.5f);
+            glVertex2f(bx,        by);
+            glVertex2f(bx + 1.3f, by + 0.5f);
         glEnd();
     }
-
     glDisable(GL_LINE_SMOOTH);
     glLineWidth(1.0f);
 }
@@ -741,15 +737,13 @@ void timer(int /*value*/) {
         if (deerX > DEER_X_MAX) { deerX = DEER_X_MAX; deerDir = -1.0f; }
         if (deerX < DEER_X_MIN) { deerX = DEER_X_MIN; deerDir =  1.0f; }
     }
-    // TRANSFORM: Translation -- move birds left to right (Person 1)
+    // TRANSFORM: Translation -- birds drift left to right (Person 1)
     if (timeState == DAY) {
         for (int i = 0; i < 3; i++) {
             birdX[i] += BIRD_SPEED;
-            if (birdX[i] > 45.0f)    // flew off right edge
-                birdX[i] = -50.0f;   // reset off-screen to the left
+            if (birdX[i] > 45.0f) birdX[i] = -50.0f;
         }
     }
-
     glutPostRedisplay();
     glutTimerFunc(16, timer, 0);
 }
@@ -760,7 +754,7 @@ void timer(int /*value*/) {
 void display() {
     drawSky();
     drawRiver();
-    drawBirds();       // Person 1 -- day only, translating V-shapes
+    drawBirds();       // Person 1 -- day only
     drawVillage();
     drawFence();
     drawCat();
